@@ -11,6 +11,7 @@ pub struct APIKey {
 }
 
 impl APIKey {
+    /// Generates a new APIKey for the given username and email.
     pub async fn get_new_key(user_name: &str, user_email: &str) -> Self {
         APIKey {
             user_name: user_name.to_string(),
@@ -20,6 +21,7 @@ impl APIKey {
         }
     }
 
+    /// Revokes the API key.
     pub async fn revoke(&mut self) {
         self.is_revoked = true;
     }
