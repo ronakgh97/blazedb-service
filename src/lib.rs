@@ -6,7 +6,10 @@ pub mod prelude {
     };
     pub use crate::server::log;
     pub use crate::server::schema::{
-        Feature, Plans, User, UserLoginRequest, UserLoginResponse, VerifyEmailRequest,
+        Feature, Plans, User, UserRegisterRequest, UserRegisterResponse, VerifyEmailRequest,
         VerifyEmailResponse,
+    };
+    pub use crate::server::service::{
+        create_dirs, create_logs_dir, get_billing_path, get_data_path, get_logs_path,
     };
 }

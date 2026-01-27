@@ -1,35 +1,44 @@
+use crate::server::crypto::APIKey;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct UserLoginRequest {
+pub struct UserRegisterRequest {
     pub username: String,
     pub email: String,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-
-pub struct UserLoginResponse {
+pub struct UserRegisterResponse {
+    pub user_id: String,
     pub is_created: bool,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct VerifyEmailRequest {
     pub email: String,
-    pub otp: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct VerificationCode {
+    pub email: String,
+    pub code: String,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct VerifyEmailResponse {
-    pub is_verified: bool,
+    pub is_code_sent: bool,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct User {
-    username: String,
-    email: String,
-    api_key: Option<String>,
-    is_verified: bool,
-    plans: Plans,
+    pub user_id: String,
+    pub username: String,
+    pub email: String,
+    pub api_key: Option<APIKey>,
+    pub is_verified: bool,
+    pub plans: Plans,
+    pub instance_url: String,
+    pub created_at: String,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
