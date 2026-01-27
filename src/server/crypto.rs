@@ -1,5 +1,29 @@
 use pbkdf2::pbkdf2_hmac;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct APIKey {
+    pub user_name: String,
+    pub user_email: String,
+    pub api_key: String,
+    pub is_revoked: bool,
+}
+
+impl APIKey {
+    pub async fn get_new_key(user_name: &str, user_email: &str) -> Self {
+        APIKey {
+            user_name: user_name.to_string(),
+            user_email: user_email.to_string(),
+            api_key: generate_api_key(user_name, user_email).await,
+            is_revoked: false,
+        }
+    }
+
+    pub async fn revoke(&mut self) {
+        self.is_revoked = true;
+    }
+}
 
 /// Generates a cryptographic salt of the specified length in bytes.
 pub async fn generate_salt(len: usize) -> Vec<u8> {
