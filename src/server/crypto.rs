@@ -6,24 +6,44 @@ use sha2::{Digest, Sha256};
 pub struct APIKey {
     pub user_name: String,
     pub user_email: String,
-    pub api_key: String,
+    pub api_key_hash: String,
+    pub key_prefix: String,
     pub is_revoked: bool,
+    pub created_at: String,
 }
 
 impl APIKey {
     /// Generates a new APIKey for the given username and email.
-    pub async fn get_new_key(user_name: &str, user_email: &str) -> Self {
-        APIKey {
+    /// Returns (APIKey with hash, plain_text_key for one-time display)
+    pub async fn get_new_key(user_name: &str, user_email: &str) -> (Self, String) {
+        let plain_key = generate_api_key(user_name, user_email).await;
+        let key_hash = hash_api_key(&plain_key).await;
+        let prefix = plain_key.chars().take(12).collect::<String>() + "...";
+
+        let api_key = APIKey {
             user_name: user_name.to_string(),
             user_email: user_email.to_string(),
-            api_key: generate_api_key(user_name, user_email).await,
+            api_key_hash: key_hash,
+            key_prefix: prefix,
             is_revoked: false,
-        }
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+
+        (api_key, plain_key)
     }
 
     /// Revokes the API key.
     pub async fn revoke(&mut self) {
         self.is_revoked = true;
+    }
+
+    /// Verifies if the provided plain API key matches this stored hash
+    pub async fn verify(&self, plain_key: &str) -> bool {
+        if self.is_revoked {
+            return false;
+        }
+        let key_hash = hash_api_key(plain_key).await;
+        key_hash == self.api_key_hash
     }
 }
 
@@ -62,6 +82,13 @@ pub async fn hash_otp(otp: &str) -> Vec<u8> {
     let mut hasher = Sha256::new();
     hasher.update(otp.as_bytes());
     hasher.finalize().to_vec()
+}
+
+/// Hashes the provided API key using SHA-256 and returns hex-encoded string
+pub async fn hash_api_key(api_key: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(api_key.as_bytes());
+    hex::encode(hasher.finalize())
 }
 
 /// Verifies the provided OTP against the stored hash.

@@ -2,7 +2,7 @@ pub use crate::prelude::{
     Plans, User, UserRegisterRequest, UserRegisterResponse, VerifyEmailRequest, VerifyEmailResponse,
 };
 use crate::server::crypto::{APIKey, hash_otp, verify_otp as crypto_verify_otp};
-pub use crate::server::schema::{OtpRecord, VerifyOtpRequest, VerifyOtpResponse};
+pub use crate::server::schema::{OtpRecord, UserStats, VerifyOtpRequest, VerifyOtpResponse};
 use crate::server::storage::DataStore;
 use crate::{error, info};
 use anyhow::Result;
@@ -10,6 +10,8 @@ use chrono::{Duration, Utc};
 use lettre::message::{MultiPart, SinglePart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{Message, SmtpTransport, Transport};
+use rayon::iter::ParallelIterator;
+use rayon::prelude::IntoParallelRefIterator;
 use std::path::PathBuf;
 
 /// Creates necessary directories for the service: data, logs, and billing.
@@ -119,6 +121,7 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
             return Ok(VerifyOtpResponse {
                 is_verified: false,
                 message: "No verification code found for this email".to_string(),
+                api_key: None,
             });
         }
     };
@@ -134,6 +137,7 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
         return Ok(VerifyOtpResponse {
             is_verified: false,
             message: "Verification code has expired".to_string(),
+            api_key: None,
         });
     }
 
@@ -145,6 +149,7 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
         return Ok(VerifyOtpResponse {
             is_verified: false,
             message: "Invalid verification code".to_string(),
+            api_key: None,
         });
     }
 
@@ -158,6 +163,7 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
             return Ok(VerifyOtpResponse {
                 is_verified: false,
                 message: "User not found".to_string(),
+                api_key: None,
             });
         }
     };
@@ -173,14 +179,33 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
 
     // Assign API key upon successful verification
     let mut user = user_datastore.get(&data.email)?.unwrap();
-    let api_key = APIKey::get_new_key(&user.username, &user.email).await;
-    user.api_key.push(api_key);
+    let (api_key_struct, plain_key) = APIKey::get_new_key(&user.username, &user.email).await;
+    user.api_key.push(api_key_struct);
     user_datastore.insert(data.email.clone(), user)?;
 
     Ok(VerifyOtpResponse {
         is_verified: true,
         message: "Email verified successfully".to_string(),
+        api_key: Some(plain_key), // Return plain key ONLY this once
     })
+}
+
+/// Verifies an API key and returns the associated user email if valid
+/// Returns None if the key is invalid or revoked
+pub async fn verify_api_key(api_key: &str) -> Result<Option<String>> {
+    let user_datastore = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
+    let all_users = user_datastore.values()?;
+
+    // Search through all users for a matching API key
+    for user in all_users {
+        for key in &user.api_key {
+            if key.verify(api_key).await {
+                return Ok(Some(user.email.clone()));
+            }
+        }
+    }
+
+    Ok(None)
 }
 
 /// Just Sends a verification code (OTP) to the specified email address and stores the hashed OTP in the datastore
@@ -348,4 +373,67 @@ pub async fn cleanup_expired_otps() -> Result<usize> {
     }
 
     Ok(removed_count)
+}
+
+/// Retrieves all users from the datastore
+pub async fn get_all_users() -> Result<Vec<User>> {
+    let user_datastore = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
+    let all_users = user_datastore.values()?;
+    Ok(all_users)
+}
+
+/// Retrieves all users who are not verified
+pub async fn get_unverified_users() -> Result<Vec<User>> {
+    let user_datastore = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
+    let all_users = user_datastore.values()?;
+
+    let unverified_users: Vec<User> = all_users
+        .par_iter()
+        .filter(|user| !user.is_verified)
+        .cloned()
+        .collect();
+
+    Ok(unverified_users)
+}
+
+/// Retrieves all users who are on the free plan
+pub async fn get_all_free_users() -> Result<Vec<User>> {
+    let user_datastore = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
+    let all_users = user_datastore.values()?;
+
+    let free_users: Vec<User> = all_users
+        .par_iter()
+        .filter(|user| user.plans.name == "Free")
+        .cloned()
+        .collect();
+
+    Ok(free_users)
+}
+
+/// Retrieves all users who are on the starter plan
+pub async fn get_all_starter_users() -> Result<Vec<User>> {
+    let user_datastore = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
+    let all_users = user_datastore.values()?;
+
+    let starter_users: Vec<User> = all_users
+        .par_iter()
+        .filter(|user| user.plans.name == "Starter")
+        .cloned()
+        .collect();
+
+    Ok(starter_users)
+}
+
+/// Retrieves all users who are on the pro plan
+pub async fn get_all_pro_users() -> Result<Vec<User>> {
+    let user_datastore = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
+    let all_users = user_datastore.values()?;
+
+    let pro_users: Vec<User> = all_users
+        .par_iter()
+        .filter(|user| user.plans.name == "Pro")
+        .cloned()
+        .collect();
+
+    Ok(pro_users)
 }

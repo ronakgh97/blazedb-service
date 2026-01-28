@@ -39,6 +39,7 @@ pub struct VerifyOtpRequest {
 pub struct VerifyOtpResponse {
     pub is_verified: bool,
     pub message: String,
+    pub api_key: Option<String>, // Return plain API key ONLY once after verification
 }
 
 /// Structure representing an OTP record
@@ -60,6 +61,32 @@ pub struct User {
     pub plans: Plans,
     pub instance_url: String,
     pub created_at: String,
+}
+
+/// Safe user stats structure for public endpoints
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct UserStats {
+    pub username: String,
+    pub email: String,
+    pub api_keys_count: usize,
+    pub api_key_prefixes: Vec<String>, // Only show prefixes like "blz_abc123..."
+    pub is_verified: bool,
+    pub plans: Plans,
+    pub created_at: String,
+}
+
+impl From<User> for UserStats {
+    fn from(user: User) -> Self {
+        UserStats {
+            username: user.username,
+            email: user.email,
+            api_keys_count: user.api_key.len(),
+            api_key_prefixes: user.api_key.iter().map(|k| k.key_prefix.clone()).collect(),
+            is_verified: user.is_verified,
+            plans: user.plans,
+            created_at: user.created_at,
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -120,4 +147,12 @@ impl Plans {
             },
         }
     }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct UserData {
+    pub unverified_users: Vec<UserStats>,
+    pub free_users: Vec<UserStats>,
+    pub stater_users: Vec<UserStats>,
+    pub pro_users: Vec<UserStats>,
 }

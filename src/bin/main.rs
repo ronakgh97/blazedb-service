@@ -4,7 +4,11 @@ use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use blaze_service::prelude::*;
-use blaze_service::server::service::{is_user_exists, is_user_verified, save_user, verify_user};
+use blaze_service::server::schema::{UserData, UserStats};
+use blaze_service::server::service::{
+    get_all_free_users, get_all_pro_users, get_all_starter_users, get_unverified_users,
+    is_user_exists, is_user_verified, save_user, verify_user,
+};
 use blaze_service::{error, info, warn};
 use std::sync::OnceLock;
 
@@ -42,10 +46,10 @@ async fn create_router() -> Router {
         .route("/v1/blz/auth/verify-email", post(auth_verify_email))
         .route("/v1/blz/auth/verify-code", post(auth_verify_code))
         .route("/billing/plans", get(billing_plans))
-    //         .route("/billing/checkout", post(billing_checkout))
-    //         .route("/billing/webhook", post(stripe_webhook))
-    //         .route("/account/status", get(account_status))
-    //
+        .route("/v1/blz/users/stats", get(get_user_stats))
+    // .route("/billing/checkout", post(billing_checkout))
+    // .route("/billing/webhook", post(stripe_webhook))
+    // .route("/account/status", get(account_status))
 }
 
 // Start background cleanup task
@@ -201,7 +205,7 @@ async fn auth_verify_email(Json(payload): Json<VerifyEmailRequest>) -> impl Into
             if is_verified {
                 info!("User already verified for email: {}", payload.email);
                 return (
-                    StatusCode::OK,
+                    StatusCode::CONFLICT,
                     Json(VerifyEmailResponse {
                         is_code_sent: false,
                     }),
@@ -253,6 +257,7 @@ async fn auth_verify_code(Json(payload): Json<VerifyOtpRequest>) -> impl IntoRes
             Json(VerifyOtpResponse {
                 is_verified: false,
                 message: "Email or OTP cannot be empty".to_string(),
+                api_key: None,
             }),
         );
     }
@@ -271,6 +276,7 @@ async fn auth_verify_code(Json(payload): Json<VerifyOtpRequest>) -> impl IntoRes
                 Json(VerifyOtpResponse {
                     is_verified: false,
                     message: "Something went wrong, Error: ".to_string() + &e.to_string(),
+                    api_key: None,
                 }),
             )
         }
@@ -280,6 +286,33 @@ async fn auth_verify_code(Json(payload): Json<VerifyOtpRequest>) -> impl IntoRes
 async fn billing_plans() -> impl IntoResponse {
     let plans = vec![Plans::free_plan(), Plans::starter_plan(), Plans::pro_plan()];
     (StatusCode::OK, Json(plans))
+}
+
+async fn get_user_stats() -> impl IntoResponse {
+    let unverified_user = get_unverified_users().await.unwrap_or_else(|e| {
+        error!("Failed to fetch unverified users: {:?}", e);
+        Vec::new()
+    });
+    let free_users = get_all_free_users().await.unwrap_or_else(|e| {
+        error!("Failed to fetch free users: {:?}", e);
+        Vec::new()
+    });
+    let starter_users = get_all_starter_users().await.unwrap_or_else(|e| {
+        error!("Failed to fetch starter users: {:?}", e);
+        Vec::new()
+    });
+    let pro_users = get_all_pro_users().await.unwrap_or_else(|e| {
+        error!("Failed to fetch pro users: {:?}", e);
+        Vec::new()
+    });
+
+    let userdata = UserData {
+        unverified_users: unverified_user.into_iter().map(UserStats::from).collect(),
+        free_users: free_users.into_iter().map(UserStats::from).collect(),
+        stater_users: starter_users.into_iter().map(UserStats::from).collect(),
+        pro_users: pro_users.into_iter().map(UserStats::from).collect(),
+    };
+    (StatusCode::OK, Json(userdata))
 }
 
 fn is_empty_field(field: &str) -> bool {
