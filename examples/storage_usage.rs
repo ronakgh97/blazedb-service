@@ -18,7 +18,7 @@ fn main() -> Result<()> {
     let user = User {
         username: "alice".to_string(),
         email: "alice@example.com".to_string(),
-        api_key: None,
+        api_key: Vec::new(),
         is_verified: false,
         plans: Plans::free_plan(),
         instance_url: "https://alice.blaze.io".to_string(),
@@ -67,7 +67,7 @@ fn main() -> Result<()> {
             let user = User {
                 username: format!("user{}", i),
                 email: email.clone(),
-                api_key: None,
+                api_key: Vec::new(),
                 is_verified: false,
                 plans: Plans::free_plan(),
                 instance_url: format!("https://user{}.blaze.io", i),

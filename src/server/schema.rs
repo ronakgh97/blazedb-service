@@ -55,7 +55,7 @@ pub struct OtpRecord {
 pub struct User {
     pub username: String,
     pub email: String,
-    pub api_key: Option<APIKey>,
+    pub api_key: Vec<APIKey>,
     pub is_verified: bool,
     pub plans: Plans,
     pub instance_url: String,
@@ -73,6 +73,9 @@ pub struct Plans {
 pub struct Feature {
     pub database_no: u32,
     pub vector_per_db: u32,
+    pub demo_datasets_included: bool,
+    pub dedicated_server_instance: bool,
+    pub embedding_api_access: bool,
 }
 
 impl Plans {
@@ -82,7 +85,10 @@ impl Plans {
             price_per_month: 0,
             features: Feature {
                 database_no: 1,
-                vector_per_db: 10000,
+                vector_per_db: 10_000,
+                demo_datasets_included: true,
+                dedicated_server_instance: false,
+                embedding_api_access: false,
             },
         }
     }
@@ -93,7 +99,10 @@ impl Plans {
             price_per_month: 9,
             features: Feature {
                 database_no: 10,
-                vector_per_db: 100000,
+                vector_per_db: 100_000,
+                demo_datasets_included: true,
+                dedicated_server_instance: true,
+                embedding_api_access: true,
             },
         }
     }
@@ -104,7 +113,10 @@ impl Plans {
             price_per_month: 29,
             features: Feature {
                 database_no: 100,
-                vector_per_db: 1000000,
+                vector_per_db: 10_00_000,
+                demo_datasets_included: true,
+                dedicated_server_instance: true,
+                embedding_api_access: true,
             },
         }
     }

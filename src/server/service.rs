@@ -1,7 +1,7 @@
 pub use crate::prelude::{
     Plans, User, UserRegisterRequest, UserRegisterResponse, VerifyEmailRequest, VerifyEmailResponse,
 };
-use crate::server::crypto::{hash_otp, verify_otp as crypto_verify_otp};
+use crate::server::crypto::{APIKey, hash_otp, verify_otp as crypto_verify_otp};
 pub use crate::server::schema::{OtpRecord, VerifyOtpRequest, VerifyOtpResponse};
 use crate::server::storage::DataStore;
 use crate::{error, info};
@@ -50,20 +50,20 @@ pub async fn get_billing_path() -> PathBuf {
 
 /// Saves a new user to the datastore and returns a response indicating success.
 pub async fn save_user(user_data: &UserRegisterRequest) -> Result<UserRegisterResponse> {
-    let datastore = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
+    let user_store = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
 
     // Create a user with email as the key
     let user = User {
         username: user_data.username.clone(),
         email: user_data.email.clone(),
-        api_key: None,
+        api_key: Vec::new(),
         is_verified: false,
         plans: Plans::free_plan(),
         instance_url: "".to_string(),
         created_at: Utc::now().to_rfc3339(),
     };
 
-    datastore.insert(user_data.email.clone(), user)?;
+    user_store.insert(user_data.email.clone(), user)?;
 
     let response = UserRegisterResponse {
         email: user_data.email.clone(),
@@ -161,6 +161,12 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
 
     info!("User {} successfully verified", data.email);
 
+    // Assign API key upon successful verification
+    let mut user = user_datastore.get(&data.email)?.unwrap();
+    let api_key = APIKey::get_new_key(&user.username, &user.email).await;
+    user.api_key.push(api_key);
+    user_datastore.insert(data.email.clone(), user)?;
+
     Ok(VerifyOtpResponse {
         is_verified: true,
         message: "Email verified successfully".to_string(),
@@ -201,16 +207,72 @@ pub async fn send_verification_code(email: &str) -> Result<bool> {
         <html>
         <head>
             <style>
-                body {{ font-family: monospace; background: #000; color: #0f0; }}
-                .otp {{ font-size: 32px; letter-spacing: 5px; padding: 20px; background: #111; }}
+                body {{
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    background-color: #f6f9fc;
+                    margin: 0;
+                    padding: 0;
+                    color: #333;
+                }}
+                .container {{
+                    max-width: 600px;
+                    margin: 40px auto;
+                    background: #ffffff;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+                    overflow: hidden;
+                }}
+                .header {{
+                    background: linear-gradient(135deg, #0052cc 0%, #007bff 100%);
+                    padding: 30px;
+                    text-align: center;
+                }}
+                .header h1 {{
+                    color: white;
+                    margin: 0;
+                    font-size: 24px;
+                    font-weight: 600;
+                }}
+                .content {{
+                    padding: 40px;
+                    text-align: center;
+                }}
+                .otp {{
+                    font-family: monospace;
+                    font-size: 32px;
+                    letter-spacing: 8px;
+                    font-weight: bold;
+                    color: #0052cc;
+                    background: #eef2f7;
+                    padding: 24px;
+                    border-radius: 6px;
+                    margin: 30px 0;
+                    display: inline-block;
+                }}
+                .footer {{
+                    background-color: #f8f9fa;
+                    padding: 20px;
+                    text-align: center;
+                    font-size: 12px;
+                    color: #6c757d;
+                    border-top: 1px solid #eee;
+                }}
             </style>
         </head>
         <body>
-            <h1>BlazeDB Login</h1>
-            <p>Your one-time password:</p>
-            <div class="otp">{}</div>
-            <p>This code expires in 5 minutes.</p>
-            <p>If you didn't request this, ignore this email.</p>
+            <div class="container">
+                <div class="header">
+                    <h1>BlazeDB Verification</h1>
+                </div>
+                <div class="content">
+                    <p style="font-size: 16px;">Please use the verification code below to get your Free API KEY.</p>
+                    <div class="otp">{}</div>
+                    <p style="color: #666; font-size: 14px;">This code will expire in 5 minutes.</p>
+                </div>
+                <div class="footer">
+                    <p>If you didn't request this code, you can safely ignore this email.</p>
+                </div>
+            </div>
         </body>
         </html>
         "#,
@@ -220,7 +282,7 @@ pub async fn send_verification_code(email: &str) -> Result<bool> {
     let plain_body = format!("Your BlazeDB OTP: {}\n\nExpires in 5 minutes.", otp);
 
     // Get app_passwords from env
-    let app_password = std::env::var("APP_PASSWORDS")?;
+    let app_password = std::env::var("APP_PASSWORDS").expect("APP_PASSWORDS must be set 🤬");
 
     let email_message = Message::builder()
         .from("noreply.blz.service@gmail.com".parse()?)
