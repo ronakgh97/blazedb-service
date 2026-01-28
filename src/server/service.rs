@@ -83,6 +83,16 @@ pub async fn is_user_exists(email: &String) -> Result<bool> {
     }
 }
 
+// / Checks if the user with the given email is verified
+pub async fn is_user_verified(email: &String) -> Result<bool> {
+    let datastore = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
+    if let Some(user) = datastore.get(email)? {
+        Ok(user.is_verified)
+    } else {
+        Ok(false)
+    }
+}
+
 /// Initiates the email verification process by sending a verification code to the user's email
 pub async fn verify_user(data: &VerifyEmailRequest) -> Result<VerifyEmailResponse> {
     // Send verification code and return response
@@ -301,10 +311,7 @@ pub async fn send_verification_code(email: &str) -> Result<bool> {
         .build();
 
     let response: bool = match mailer.send(&email_message) {
-        Ok(_) => {
-            info!("Verification email sent successfully to {}", email);
-            true
-        }
+        Ok(_) => true,
         Err(e) => {
             error!("Could not send email: {:?}", e);
             // Clean up OTP record if email fails

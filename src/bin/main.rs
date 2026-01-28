@@ -4,7 +4,7 @@ use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use blaze_service::prelude::*;
-use blaze_service::server::service::{is_user_exists, save_user, verify_user};
+use blaze_service::server::service::{is_user_exists, is_user_verified, save_user, verify_user};
 use blaze_service::{error, info, warn};
 use std::sync::OnceLock;
 
@@ -41,7 +41,7 @@ async fn create_router() -> Router {
         .route("/v1/blz/auth/register", post(auth_register))
         .route("/v1/blz/auth/verify-email", post(auth_verify_email))
         .route("/v1/blz/auth/verify-code", post(auth_verify_code))
-    //         .route("/billing/plans", get(billing_plans))
+        .route("/billing/plans", get(billing_plans))
     //         .route("/billing/checkout", post(billing_checkout))
     //         .route("/billing/webhook", post(stripe_webhook))
     //         .route("/account/status", get(account_status))
@@ -154,6 +154,7 @@ async fn auth_register(Json(payload): Json<UserRegisterRequest>) -> impl IntoRes
 /// This endpoint handles email verification requests which sends a verification code to the user's email.
 async fn auth_verify_email(Json(payload): Json<VerifyEmailRequest>) -> impl IntoResponse {
     info!("Verify email attempt for email: {}", payload.email);
+
     if is_empty_field(&payload.email) {
         warn!("Email verification failed: Empty email");
         return (
@@ -183,6 +184,33 @@ async fn auth_verify_email(Json(payload): Json<VerifyEmailRequest>) -> impl Into
         Err(e) => {
             error!(
                 "Some error occurred while checking user existence for email: {}, Error: {:?}",
+                payload.email, e
+            );
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(VerifyEmailResponse {
+                    is_code_sent: false,
+                }),
+            );
+        }
+    }
+
+    // Check if already verified
+    match is_user_verified(&payload.email).await {
+        Ok(is_verified) => {
+            if is_verified {
+                info!("User already verified for email: {}", payload.email);
+                return (
+                    StatusCode::OK,
+                    Json(VerifyEmailResponse {
+                        is_code_sent: false,
+                    }),
+                );
+            }
+        }
+        Err(e) => {
+            error!(
+                "Some error occurred while checking user verification for email: {}, Error: {:?}",
                 payload.email, e
             );
             return (
@@ -230,7 +258,7 @@ async fn auth_verify_code(Json(payload): Json<VerifyOtpRequest>) -> impl IntoRes
     }
     match verify_otp_service(&payload).await {
         Ok(response) => {
-            info!("OTP verified for email: {}", response.is_verified);
+            info!("OTP verified for email: {}", payload.email);
             (StatusCode::OK, Json(response))
         }
         Err(e) => {
@@ -247,6 +275,11 @@ async fn auth_verify_code(Json(payload): Json<VerifyOtpRequest>) -> impl IntoRes
             )
         }
     }
+}
+
+async fn billing_plans() -> impl IntoResponse {
+    let plans = vec![Plans::free_plan(), Plans::starter_plan(), Plans::pro_plan()];
+    (StatusCode::OK, Json(plans))
 }
 
 fn is_empty_field(field: &str) -> bool {
