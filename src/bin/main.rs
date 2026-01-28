@@ -5,7 +5,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use blaze_service::prelude::*;
 use blaze_service::server::service::{is_user_exists, save_user, verify_user};
-use blaze_service::{error, info};
+use blaze_service::{error, info, warn};
 use std::sync::OnceLock;
 
 static SERVER_START_TIME: OnceLock<chrono::DateTime<chrono::Local>> = OnceLock::new();
@@ -80,12 +80,16 @@ async fn health_check() -> impl IntoResponse {
         "uptime_hours": format!("{:.2}", uptime_hours)
     });
 
+    info!("Health check: Uptime: {:.2} hours", uptime_hours);
+
     (StatusCode::OK, Json(response))
 }
 
 /// This endpoint handles user registration and saves the user data.
 async fn auth_register(Json(payload): Json<UserRegisterRequest>) -> impl IntoResponse {
+    info!("User registration attempt for email: {}", payload.email);
     if is_empty_field(&payload.username) || is_empty_field(&payload.email) {
+        warn!("Registration failed: Empty username or email");
         return (
             StatusCode::BAD_REQUEST,
             Json(UserRegisterResponse {
@@ -98,6 +102,7 @@ async fn auth_register(Json(payload): Json<UserRegisterRequest>) -> impl IntoRes
     match is_user_exists(&payload.email).await {
         Ok(exists) => {
             if exists {
+                warn!("User already exists with email: {}", payload.email);
                 return (
                     StatusCode::CONFLICT,
                     Json(UserRegisterResponse {
@@ -107,7 +112,11 @@ async fn auth_register(Json(payload): Json<UserRegisterRequest>) -> impl IntoRes
                 );
             }
         }
-        Err(_e) => {
+        Err(e) => {
+            error!(
+                "Some error occurred while checking user existence for email: {}, Error: {:?}",
+                payload.email, e
+            );
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(UserRegisterResponse {
@@ -118,21 +127,35 @@ async fn auth_register(Json(payload): Json<UserRegisterRequest>) -> impl IntoRes
         }
     }
 
-    match save_user(payload).await {
-        Ok(response) => (StatusCode::CREATED, Json(response)),
-        Err(_e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(UserRegisterResponse {
-                email: "".to_string(),
-                is_created: false,
-            }),
-        ),
+    match save_user(&payload).await {
+        Ok(response) => {
+            info!(
+                "User registered successfully with email: {}",
+                response.email
+            );
+            (StatusCode::CREATED, Json(response))
+        }
+        Err(e) => {
+            error!(
+                "User registration failed for email: {}, Error: {:?}",
+                payload.email, e
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(UserRegisterResponse {
+                    email: "".to_string(),
+                    is_created: false,
+                }),
+            )
+        }
     }
 }
 
 /// This endpoint handles email verification requests which sends a verification code to the user's email.
 async fn auth_verify_email(Json(payload): Json<VerifyEmailRequest>) -> impl IntoResponse {
+    info!("Verify email attempt for email: {}", payload.email);
     if is_empty_field(&payload.email) {
+        warn!("Email verification failed: Empty email");
         return (
             StatusCode::BAD_REQUEST,
             Json(VerifyEmailResponse {
@@ -145,6 +168,10 @@ async fn auth_verify_email(Json(payload): Json<VerifyEmailRequest>) -> impl Into
     match is_user_exists(&payload.email).await {
         Ok(exists) => {
             if !exists {
+                warn!(
+                    "Email verification failed: User not found for email: {}",
+                    payload.email
+                );
                 return (
                     StatusCode::NOT_FOUND,
                     Json(VerifyEmailResponse {
@@ -153,7 +180,11 @@ async fn auth_verify_email(Json(payload): Json<VerifyEmailRequest>) -> impl Into
                 );
             }
         }
-        Err(_e) => {
+        Err(e) => {
+            error!(
+                "Some error occurred while checking user existence for email: {}, Error: {:?}",
+                payload.email, e
+            );
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(VerifyEmailResponse {
@@ -163,21 +194,32 @@ async fn auth_verify_email(Json(payload): Json<VerifyEmailRequest>) -> impl Into
         }
     }
 
-    match verify_user(payload).await {
-        Ok(response) => (StatusCode::OK, Json(response)),
-        Err(_e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(VerifyEmailResponse {
-                is_code_sent: false,
-            }),
-        ),
+    match verify_user(&payload).await {
+        Ok(response) => {
+            info!("Verification code sent to email: {}", payload.email);
+            (StatusCode::OK, Json(response))
+        }
+        Err(e) => {
+            error!(
+                "Email verification failed for email: {}, Error: {:?}",
+                payload.email, e
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(VerifyEmailResponse {
+                    is_code_sent: false,
+                }),
+            )
+        }
     }
 }
 
 // TODO: Explicitly handle cases like user not found, OTP expired, invalid OTP, etc, right now its either 200 or 500.
 /// This endpoint handles verification code submission for email verification.
 async fn auth_verify_code(Json(payload): Json<VerifyOtpRequest>) -> impl IntoResponse {
+    info!("OTP verification attempt for email: {}", payload.email);
     if is_empty_field(&payload.email) || is_empty_field(&payload.otp) {
+        warn!("OTP verification failed: Empty email or OTP");
         return (
             StatusCode::BAD_REQUEST,
             Json(VerifyOtpResponse {
@@ -186,15 +228,24 @@ async fn auth_verify_code(Json(payload): Json<VerifyOtpRequest>) -> impl IntoRes
             }),
         );
     }
-    match verify_otp_service(payload).await {
-        Ok(response) => (StatusCode::OK, Json(response)),
-        Err(_e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(VerifyOtpResponse {
-                is_verified: false,
-                message: "Internal server error".to_string(),
-            }),
-        ),
+    match verify_otp_service(&payload).await {
+        Ok(response) => {
+            info!("OTP verified for email: {}", response.is_verified);
+            (StatusCode::OK, Json(response))
+        }
+        Err(e) => {
+            error!(
+                "OTP verification failed for email: {}, Error: {:?}",
+                payload.email, e
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(VerifyOtpResponse {
+                    is_verified: false,
+                    message: "Something went wrong, Error: ".to_string() + &e.to_string(),
+                }),
+            )
+        }
     }
 }
 

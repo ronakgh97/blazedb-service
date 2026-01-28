@@ -49,12 +49,12 @@ pub async fn get_billing_path() -> PathBuf {
 }
 
 /// Saves a new user to the datastore and returns a response indicating success.
-pub async fn save_user(user_data: UserRegisterRequest) -> Result<UserRegisterResponse> {
+pub async fn save_user(user_data: &UserRegisterRequest) -> Result<UserRegisterResponse> {
     let datastore = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
 
     // Create a user with email as the key
     let user = User {
-        username: user_data.username,
+        username: user_data.username.clone(),
         email: user_data.email.clone(),
         api_key: None,
         is_verified: false,
@@ -62,11 +62,11 @@ pub async fn save_user(user_data: UserRegisterRequest) -> Result<UserRegisterRes
         instance_url: "".to_string(),
         created_at: Utc::now().to_rfc3339(),
     };
-    
+
     datastore.insert(user_data.email.clone(), user)?;
 
     let response = UserRegisterResponse {
-        email: user_data.email,
+        email: user_data.email.clone(),
         is_created: true,
     };
 
@@ -84,24 +84,21 @@ pub async fn is_user_exists(email: &String) -> Result<bool> {
 }
 
 /// Initiates the email verification process by sending a verification code to the user's email
-pub async fn verify_user(data: VerifyEmailRequest) -> Result<VerifyEmailResponse> {
+pub async fn verify_user(data: &VerifyEmailRequest) -> Result<VerifyEmailResponse> {
     // Send verification code and return response
     match send_verification_code(&data.email).await {
         Ok(is_sent) => Ok(VerifyEmailResponse {
             is_code_sent: is_sent,
         }),
-        Err(e) => {
-            error!("Error sending verification code: {:?}", e);
-            Ok(VerifyEmailResponse {
-                is_code_sent: false,
-            })
-        }
+        Err(_) => Ok(VerifyEmailResponse {
+            is_code_sent: false,
+        }),
     }
 }
 
 // TODO: Decouple the checks for explicit error status code
 /// Verifies the OTP code provided by the user and updates their verification status
-pub async fn verify_otp(data: VerifyOtpRequest) -> Result<VerifyOtpResponse> {
+pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
     let otp_datastore =
         DataStore::<String, OtpRecord>::new(get_data_path().await.join("otps.json"))?;
 
