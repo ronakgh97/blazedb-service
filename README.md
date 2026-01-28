@@ -6,7 +6,6 @@ Blaze Service is the backend infrastructure that powers BlazeDB as a SaaS platfo
 billing management, and instance provisioning for the high-performance vector database.
 
 [![Rust](https://img.shields.io/badge/rust-1.83%2B-orange.svg)](https://www.rust-lang.org/)
-[![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
 
 ## Overview
 
@@ -24,6 +23,7 @@ Blaze Service handles the complete lifecycle of BlazeDB instances for SaaS custo
 
 - User Registration & Email Verification
 - Secure OTP-based Authentication (PBKDF2-SHA256)
+- API Key Generation & Hashing
 - Email Service with HTML/Plain text support
 - Custom JSON-based DataStore (persistent K/V storage)
 - Automatic OTP cleanup (5-minute expiration)
@@ -33,7 +33,11 @@ Blaze Service handles the complete lifecycle of BlazeDB instances for SaaS custo
 ### 🚧 Coming Soon
 
 - Stripe Billing Integration
-- API Key Generation & Rotation
+- Cloudflare API & Tunnel Integration
+- API Key Rotation & Revocation
+- Embedding API Access
+- Enhanced Monitoring & Logging
+- Rate Limiting & Throttling
 - BlazeDB Instance Provisioning
 - Usage Tracking & Quotas
 - Database Backup & Restore
@@ -55,13 +59,14 @@ See [Storage engine Impl](src/server/storage.rs) for details.
 |-------------|-------------|-----------|------------|----------------------------------------------------------------------------------------|
 | **Free**    | $0          | 2         | 10K        | Shared Instance + Any Dimensions + Example Amazon Demo Dataset + Limited API Endpoints |
 | **Starter** | $12         | 10        | 100K       | Dedicated Instance + Any Dimensions + Example Amazon Demo Dataset                      |
-| **Pro**     | $29         | 100       | 1M         | Dedicated Instance + Any Dimensions + Example Amazon Demo Dataset + Embedding API      |
+| **Pro**     | $29         | 20        | 1M         | Dedicated Instance + Any Dimensions + Example Amazon Demo Dataset + Embedding API      |
 
 ## 🔐 Security
 
 - **OTP Hashing:** PBKDF2-HMAC-SHA256 (600,000 iterations)
 - **Email Verification:** 6-digit codes with 5-minute expiration
-- **API Keys:** Secure random generation (coming soon)
+- **API Keys:** Secure random generation + SHA-256 hashing
+- **One-time Key Display:** API keys shown only once upon verification
 - **Data Isolation:** Per-user instance segregation
 
 ## 🛠️ Technology Stack
@@ -69,7 +74,7 @@ See [Storage engine Impl](src/server/storage.rs) for details.
 - **Framework:** [Axum](https://github.com/tokio-rs/axum) (async web framework)
 - **Runtime:** [Tokio](https://tokio.rs/) (async runtime)
 - **Email:** [Lettre](https://github.com/lettre/lettre) (SMTP client) (Maybe switch to SendGrid?) 😒
-- **Crypto:** `sha2`, `pbkdf2`, `hex`
+- **Crypto:** `sha2`, `pbkdf2`, `hex` - SHA-256 hashing for API keys & OTPs
 - **Serialization:** `serde`, `serde_json`
 - **Storage:** Custom JSON K/V store with `memmap2`
 
@@ -93,7 +98,7 @@ Blaze Service makes it effortless to deploy and manage BlazeDB instances:
 
 - **Zero Configuration:** Just register, verify and get your instance
 - **Scalable:** Automatic scaling based on your plan
-- **Secure:** Email verification and API key authentication
+- **Secure:** Industry-standard API key hashing + Email verification
 - **Affordable:** Free tier available, pay as you grow
 - **Good Performance:** Not gonna lie bro, checkout the benchmarks on BlazeDB repo
 
