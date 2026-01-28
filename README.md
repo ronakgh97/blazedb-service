@@ -51,11 +51,11 @@ See [Storage engine Impl](src/server/storage.rs) for details.
 
 ## 📋 Subscription Plans
 
-| Plan        | Price/Month | Databases | Vectors/DB |
-|-------------|-------------|-----------|------------|
-| **Free**    | $0          | 1         | 10,000     |
-| **Starter** | $9          | 10        | 100,000    |
-| **Pro**     | $49         | 100       | 1,000,000  |
+| Plan        | Price/Month | Databases | Vectors/DB | Features                                                                               |
+|-------------|-------------|-----------|------------|----------------------------------------------------------------------------------------|
+| **Free**    | $0          | 2         | 10K        | Shared Instance + Any Dimensions + Example Amazon Demo Dataset + Limited API Endpoints |
+| **Starter** | $12         | 10        | 100K       | Dedicated Instance + Any Dimensions + Example Amazon Demo Dataset                      |
+| **Pro**     | $29         | 100       | 1M         | Dedicated Instance + Any Dimensions + Example Amazon Demo Dataset + Embedding API      |
 
 ## 🔐 Security
 
