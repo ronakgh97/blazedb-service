@@ -316,8 +316,10 @@ pub async fn send_verification_code(email: &str) -> Result<bool> {
 
     let plain_body = format!("Your BlazeDB OTP: {}\n\nExpires in 5 minutes.", otp);
 
+    dotenv::dotenv().ok();
+
     // Get app_passwords from env
-    let app_password = std::env::var("APP_PASSWORDS").expect("APP_PASSWORDS must be set 🤬");
+    let app_password = std::env::var("APP_PASSWORD").expect("APP_PASSWORD must be set 🤬");
 
     let email_message = Message::builder()
         .from("noreply.blz.service@gmail.com".parse()?)

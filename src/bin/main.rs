@@ -17,8 +17,10 @@ static SERVER_START_TIME: OnceLock<chrono::DateTime<chrono::Local>> = OnceLock::
 #[tokio::main]
 async fn main() -> Result<()> {
     info!("Starting Blaze Service...");
-    let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());
 
+    dotenv::dotenv().ok();
+
+    let port = std::env::var("PORT").expect("PORT must be set 😠");
     // Create necessary directories
     create_dirs().await?;
 
