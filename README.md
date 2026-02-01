@@ -1,9 +1,9 @@
-# 🔥 Blaze Service
+# 🔥 Blaze Service Layer
 
 > **SaaS Platform for [BlazeDB](https://github.com/ronakgh97/blaze-db)** - Managed Vector Database as a Service
 
-Blaze Service is the backend infrastructure that powers BlazeDB as a SaaS platform, providing user authentication,
-billing management, and instance provisioning for the high-performance vector database.
+Blaze Service is the Backend layer on top of BlazeDB as a SaaS platform, providing user
+authentication, billing management, and instance provisioning for the high-performance vector database.
 
 [![Rust](https://img.shields.io/badge/rust-1.83%2B-orange.svg)](https://www.rust-lang.org/)
 
@@ -12,9 +12,9 @@ billing management, and instance provisioning for the high-performance vector da
 Blaze Service handles the complete lifecycle of BlazeDB instances for SaaS customers:
 
 - **User Authentication** with email verification (OTP-based)
-- **Plan Management** (Free, Starter, Pro, Enterprise)
+- **Plan Management** (Free, Starter, Pro)
 - **Instance Provisioning** for BlazeDB databases
-- **Billing Integration** (Stripe ready)
+- **Billing Integration** (Razorpay ready)
 - **API Key Management** for secure access
 
 ## Key Features
@@ -32,7 +32,7 @@ Blaze Service handles the complete lifecycle of BlazeDB instances for SaaS custo
 
 ### 🚧 Coming Soon
 
-- Stripe Billing Integration
+- Razorpay Billing Integration
 - Cloudflare API & Tunnel Integration
 - API Key Rotation & Revocation
 - Embedding API Access
@@ -55,11 +55,11 @@ See [Storage engine Impl](src/server/storage.rs) for details.
 
 ## 📋 Subscription Plans
 
-| Plan        | Price/Month | Databases | Vectors/DB | Features                                                                               |
-|-------------|-------------|-----------|------------|----------------------------------------------------------------------------------------|
-| **Free**    | $0          | 2         | 10K        | Shared Instance + Any Dimensions + Example Amazon Demo Dataset + Limited API Endpoints |
-| **Starter** | $12         | 10        | 100K       | Dedicated Instance + Any Dimensions + Example Amazon Demo Dataset                      |
-| **Pro**     | $29         | 20        | 1M         | Dedicated Instance + Any Dimensions + Example Amazon Demo Dataset + Embedding API      |
+| Plan                   | Price/Month | Databases | Vectors/DB | Features                                                                                         |
+|------------------------|-------------|-----------|------------|--------------------------------------------------------------------------------------------------|
+| **Free**               | $0          | 2         | 10K        | Shared User Space + Any Dimensions + Example Amazon Demo Dataset + Limited API Endpoints         |
+| **Starter**            | $12         | 10        | 100K       | Dedicated User Space + Any Dimensions + Example Amazon Demo Dataset                              |
+| **Pro** (Not sure yet) | $19         | 20        | 500K       | Dedicated User Space and Instance + Any Dimensions + Example Amazon Demo Dataset + Embedding API |
 
 ## 🔐 Security
 
@@ -71,12 +71,12 @@ See [Storage engine Impl](src/server/storage.rs) for details.
 
 ## 🛠️ Technology Stack
 
-- **Framework:** [Axum](https://github.com/tokio-rs/axum) (async web framework)
+- **Framework:** [Axum](https://github.com/tokio-rs/axum) (async backend framework)
 - **Runtime:** [Tokio](https://tokio.rs/) (async runtime)
 - **Email:** [Lettre](https://github.com/lettre/lettre) (SMTP client) (Maybe switch to SendGrid?) 😒
 - **Crypto:** `sha2`, `pbkdf2`, `hex` - SHA-256 hashing for API keys & OTPs
 - **Serialization:** `serde`, `serde_json`
-- **Storage:** Custom JSON K/V store with `memmap2`
+- **Storage:** Custom JSON K/V store with `memmap2` (Maybe later switch to SQLite or RocksDB?) 😔
 
 ## 🤝 Contributing
 
@@ -99,9 +99,9 @@ Blaze Service makes it effortless to deploy and manage BlazeDB instances:
 - **Zero Configuration:** Just register, verify and get your instance
 - **Scalable:** Automatic scaling based on your plan
 - **Secure:** Industry-standard API key hashing + Email verification
-- **Affordable:** Free tier available, pay as you grow
+- **Affordable:** Free Forever tier available, pay as you grow
 - **Good Performance:** Not gonna lie bro, checkout the benchmarks on BlazeDB repo
 
 ---
 
-**Built with 🦀 by the BlazeDB Tea-..uh no...no Team, actually just me**
+**Built with 🦀 by the BlazeDB Tea-..uh no...no Team, just me 🥲**
