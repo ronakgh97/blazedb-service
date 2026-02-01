@@ -70,6 +70,7 @@ pub async fn save_user(user_data: &UserRegisterRequest) -> Result<UserRegisterRe
     let response = UserRegisterResponse {
         email: user_data.email.clone(),
         is_created: true,
+        error: "null".to_string(),
     };
 
     Ok(response)
@@ -85,7 +86,7 @@ pub async fn is_user_exists(email: &String) -> Result<bool> {
     }
 }
 
-// / Checks if the user with the given email is verified
+/// Checks if the user with the given email is verified
 pub async fn is_user_verified(email: &String) -> Result<bool> {
     let datastore = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
     if let Some(user) = datastore.get(email)? {
@@ -97,13 +98,14 @@ pub async fn is_user_verified(email: &String) -> Result<bool> {
 
 /// Initiates the email verification process by sending a verification code to the user's email
 pub async fn verify_user(data: &VerifyEmailRequest) -> Result<VerifyEmailResponse> {
-    // Send verification code and return response
     match send_verification_code(&data.email).await {
         Ok(is_sent) => Ok(VerifyEmailResponse {
             is_code_sent: is_sent,
+            error: "".to_string(),
         }),
-        Err(_) => Ok(VerifyEmailResponse {
+        Err(e) => Ok(VerifyEmailResponse {
             is_code_sent: false,
+            error: format!("Failed to send verification code: {}", e),
         }),
     }
 }

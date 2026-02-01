@@ -101,6 +101,7 @@ async fn auth_register(Json(payload): Json<UserRegisterRequest>) -> impl IntoRes
             Json(UserRegisterResponse {
                 email: "".to_string(),
                 is_created: false,
+                error: "Username or email cannot be empty".to_string(),
             }),
         );
     }
@@ -114,6 +115,7 @@ async fn auth_register(Json(payload): Json<UserRegisterRequest>) -> impl IntoRes
                     Json(UserRegisterResponse {
                         email: "".to_string(),
                         is_created: false,
+                        error: "User already exists".to_string(),
                     }),
                 );
             }
@@ -128,6 +130,7 @@ async fn auth_register(Json(payload): Json<UserRegisterRequest>) -> impl IntoRes
                 Json(UserRegisterResponse {
                     email: "".to_string(),
                     is_created: false,
+                    error: "Internal server error, Sorry!".to_string(),
                 }),
             );
         }
@@ -151,6 +154,7 @@ async fn auth_register(Json(payload): Json<UserRegisterRequest>) -> impl IntoRes
                 Json(UserRegisterResponse {
                     email: "".to_string(),
                     is_created: false,
+                    error: "Internal server error, Sorry!".to_string(),
                 }),
             )
         }
@@ -167,6 +171,7 @@ async fn auth_verify_email(Json(payload): Json<VerifyEmailRequest>) -> impl Into
             StatusCode::BAD_REQUEST,
             Json(VerifyEmailResponse {
                 is_code_sent: false,
+                error: "Email cannot be empty".to_string(),
             }),
         );
     }
@@ -183,6 +188,7 @@ async fn auth_verify_email(Json(payload): Json<VerifyEmailRequest>) -> impl Into
                     StatusCode::NOT_FOUND,
                     Json(VerifyEmailResponse {
                         is_code_sent: false,
+                        error: "User not found".to_string(),
                     }),
                 );
             }
@@ -196,6 +202,7 @@ async fn auth_verify_email(Json(payload): Json<VerifyEmailRequest>) -> impl Into
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(VerifyEmailResponse {
                     is_code_sent: false,
+                    error: "Internal server error, Sorry!".to_string(),
                 }),
             );
         }
@@ -210,6 +217,7 @@ async fn auth_verify_email(Json(payload): Json<VerifyEmailRequest>) -> impl Into
                     StatusCode::CONFLICT,
                     Json(VerifyEmailResponse {
                         is_code_sent: false,
+                        error: "User already verified".to_string(),
                     }),
                 );
             }
@@ -223,6 +231,7 @@ async fn auth_verify_email(Json(payload): Json<VerifyEmailRequest>) -> impl Into
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(VerifyEmailResponse {
                     is_code_sent: false,
+                    error: "Internal server error, Sorry!".to_string(),
                 }),
             );
         }
@@ -242,6 +251,7 @@ async fn auth_verify_email(Json(payload): Json<VerifyEmailRequest>) -> impl Into
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(VerifyEmailResponse {
                     is_code_sent: false,
+                    error: "Sorry, Something went wrong, Error: ".to_string() + &e.to_string(),
                 }),
             )
         }

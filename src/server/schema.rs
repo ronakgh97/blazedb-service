@@ -13,6 +13,7 @@ pub struct UserRegisterRequest {
 pub struct UserRegisterResponse {
     pub email: String,
     pub is_created: bool,
+    pub error: String,
 }
 
 /// Request structure for email verification
@@ -25,6 +26,7 @@ pub struct VerifyEmailRequest {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct VerifyEmailResponse {
     pub is_code_sent: bool,
+    pub error: String,
 }
 
 /// Request structure for OTP verification
