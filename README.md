@@ -5,7 +5,7 @@
 Blaze Service is the Backend layer on top of BlazeDB as a SaaS platform, providing user
 authentication, billing management, and instance provisioning for the high-performance vector database.
 
-[![Rust](https://img.shields.io/badge/rust-1.83%2B-orange.svg)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.92%2B-orange.svg)](https://www.rust-lang.org/)
 
 ## Overview
 
@@ -56,7 +56,7 @@ See [Storage engine Impl](src/server/storage.rs) for details.
 ## 📋 Subscription Plans
 
 | Plan                   | Price/Month | Databases | Vectors/DB | Features                                                                                         |
-|------------------------|-------------|-----------|------------|--------------------------------------------------------------------------------------------------|
+| ---------------------- | ----------- | --------- | ---------- | ------------------------------------------------------------------------------------------------ |
 | **Free**               | $0          | 2         | 10K        | Shared User Space + Any Dimensions + Example Amazon Demo Dataset + Limited API Endpoints         |
 | **Starter**            | $12         | 10        | 100K       | Dedicated User Space + Any Dimensions + Example Amazon Demo Dataset                              |
 | **Pro** (Not sure yet) | $19         | 20        | 500K       | Dedicated User Space and Instance + Any Dimensions + Example Amazon Demo Dataset + Embedding API |
