@@ -30,6 +30,7 @@ Blaze Service handles the complete lifecycle of BlazeDB instances for SaaS custo
 - RESTful API with Axum
 - Multi-tier Storage (data, logs, billing)
 - Cloudflare Proxy Integration (SSL termination & forwarding)
+- Docker Deployment (Dockerfile + docker-compose.yml) (Service only, no Proxy yet)
 
 ### 🚧 Coming Soon
 
@@ -43,9 +44,9 @@ Blaze Service handles the complete lifecycle of BlazeDB instances for SaaS custo
 - Usage Tracking & Quotas
 - Database Backup & Restore
 
-## 💾 Storage Engine (Its super verbose 😖, Gotta switch to Redis, I gave up)
+## 💾 Storage Engine (No external DBs)
 
-Blaze Service uses a custom-built JSON-based key-value storage engine with:
+Blaze Service uses a custom-built In-memory JSON-based key-value storage engine with:
 
 - **ACID-like guarantees** via locking
 - **Memory-mapped I/O** for performance
@@ -53,6 +54,10 @@ Blaze Service uses a custom-built JSON-based key-value storage engine with:
 - **Type-safe operations** with generics
 
 See [Storage engine Impl](src/server/storage.rs) for details.
+
+Anyway, Not gonna lie, it's super hard to build a proper storage engine even the basic features, so I might switch to
+SQLite
+or RocksDB later 😔
 
 ## 📋 Subscription Plans
 
