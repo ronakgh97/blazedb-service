@@ -55,8 +55,19 @@ where
         Ok(store)
     }
 
+    /// Insert or update a key-value pair in memory only
+    pub fn insert_mem(&self, key: K, value: V) -> Result<Option<V>> {
+        let mut data = self
+            .data
+            .write()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire write lock: {}", e))?;
+
+        let old_value = data.insert(key, value);
+        Ok(old_value)
+    }
+
     /// Insert or update a key-value pair
-    pub fn insert(&self, key: K, value: V) -> Result<Option<V>> {
+    pub fn insert_save(&self, key: K, value: V) -> Result<Option<V>> {
         let mut data = self
             .data
             .write()
@@ -270,8 +281,8 @@ fn test_basic_operations() -> Result<()> {
 
     let store: DataStore<String, String> = DataStore::new(temp_path.clone())?;
 
-    store.insert("key1".to_string(), "value1".to_string())?;
-    store.insert("key2".to_string(), "value2".to_string())?;
+    store.insert_save("key1".to_string(), "value1".to_string())?;
+    store.insert_save("key2".to_string(), "value2".to_string())?;
 
     assert_eq!(store.get(&"key1".to_string())?, Some("value1".to_string()));
     assert_eq!(store.get(&"key2".to_string())?, Some("value2".to_string()));
@@ -299,8 +310,8 @@ fn test_persistence() -> Result<()> {
 
     {
         let store: DataStore<String, i32> = DataStore::new(temp_path.clone())?;
-        store.insert("counter".to_string(), 42)?;
-        store.insert("score".to_string(), 100)?;
+        store.insert_save("counter".to_string(), 42)?;
+        store.insert_save("score".to_string(), 100)?;
     } // Drop store
 
     // Load from disk in a new instance
@@ -364,7 +375,7 @@ fn test_concurrent_access() -> Result<()> {
         let handle = thread::spawn(move || {
             for j in 0..10 {
                 let key = i * 10 + j;
-                let _ = store_clone.insert(key, key * 2);
+                let _ = store_clone.insert_save(key, key * 2);
             }
         });
         handles.push(handle);

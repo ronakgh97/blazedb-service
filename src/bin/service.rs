@@ -20,7 +20,7 @@ async fn main() -> Result<()> {
 
     dotenv::dotenv().ok();
 
-    let port = std::env::var("PORT").expect("PORT must be set 😠");
+    let port = std::env::var("SERVICE_PORT").expect("PORT must be set 😠");
     // Create necessary directories
     create_dirs().await?;
 
@@ -35,7 +35,7 @@ async fn main() -> Result<()> {
     // Initialize server start time
     SERVER_START_TIME.get_or_init(|| server_time);
 
-    info!("Server listening on {}", addr);
+    info!("Service server listening on {}", addr);
     info!("Server started at {}", server_time.to_rfc3339().yellow());
     axum::serve(listener, app).await?;
     Ok(())
@@ -270,6 +270,7 @@ async fn auth_verify_code(Json(payload): Json<VerifyOtpRequest>) -> impl IntoRes
                 is_verified: false,
                 message: "Email or OTP cannot be empty".to_string(),
                 api_key: None,
+                instance_id: None,
             }),
         );
     }
@@ -289,6 +290,7 @@ async fn auth_verify_code(Json(payload): Json<VerifyOtpRequest>) -> impl IntoRes
                     is_verified: false,
                     message: "Something went wrong, Error: ".to_string() + &e.to_string(),
                     api_key: None,
+                    instance_id: None,
                 }),
             )
         }

@@ -50,7 +50,7 @@ pub async fn get_billing_path() -> PathBuf {
     home_dir.join("blz_service").join("billings")
 }
 
-/// Saves a new user to the datastore and returns a response indicating success.
+/// Saves a new user to the datastore (disk) and returns a response indicating success.
 pub async fn save_user(user_data: &UserRegisterRequest) -> Result<UserRegisterResponse> {
     let user_store = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
 
@@ -65,7 +65,7 @@ pub async fn save_user(user_data: &UserRegisterRequest) -> Result<UserRegisterRe
         created_at: Utc::now().to_rfc3339(),
     };
 
-    user_store.insert(user_data.email.clone(), user)?;
+    user_store.insert_save(user_data.email.clone(), user)?;
 
     let response = UserRegisterResponse {
         email: user_data.email.clone(),
@@ -75,6 +75,16 @@ pub async fn save_user(user_data: &UserRegisterRequest) -> Result<UserRegisterRe
 
     Ok(response)
 }
+
+// /// Saves the generated API key for the user in the datastore (disk).
+// /// Handy method for fast lookup on proxy requests without needing to search through all users.
+// pub async fn save_secret(apikey: APIKey, user_data: &User) -> Result<()> {
+//     let secret_store = DataStore::<APIKey, User>::new(get_data_path().await.join("secrets.json"))?;
+// 
+//     secret_store.insert_save(apikey, user_data.clone())?;
+// 
+//     Ok(())
+// }
 
 /// Checks if a user with the given email exists in the datastore.
 pub async fn is_user_exists(email: &String) -> Result<bool> {
@@ -124,6 +134,7 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
                 is_verified: false,
                 message: "No verification code found for this email".to_string(),
                 api_key: None,
+                instance_id: None,
             });
         }
     };
@@ -140,6 +151,7 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
             is_verified: false,
             message: "Verification code has expired".to_string(),
             api_key: None,
+            instance_id: None,
         });
     }
 
@@ -152,6 +164,7 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
             is_verified: false,
             message: "Invalid verification code".to_string(),
             api_key: None,
+            instance_id: None,
         });
     }
 
@@ -166,13 +179,14 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
                 is_verified: false,
                 message: "User not found".to_string(),
                 api_key: None,
+                instance_id: None,
             });
         }
     };
 
     // Update verification status
     user.is_verified = true;
-    user_datastore.insert(data.email.clone(), user)?;
+    user_datastore.insert_save(data.email.clone(), user)?;
 
     // Clean up used OTP
     otp_datastore.delete(&data.email)?;
@@ -182,13 +196,14 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
     // Assign API key upon successful verification
     let mut user = user_datastore.get(&data.email)?.unwrap();
     let (api_key_struct, plain_key) = APIKey::get_new_key(&user.username, &user.email).await;
-    user.api_key.push(api_key_struct);
-    user_datastore.insert(data.email.clone(), user)?;
+    user.api_key.push(api_key_struct.clone());
+    user_datastore.insert_save(data.email.clone(), user.clone())?;
 
     Ok(VerifyOtpResponse {
         is_verified: true,
         message: "Email verified successfully".to_string(),
         api_key: Some(plain_key), // Return plain key ONLY this once
+        instance_id: Some("TODO".to_string()), // TODO: Generate and return user-specific instance URL
     })
 }
 
@@ -218,11 +233,9 @@ pub async fn send_verification_code(email: &str) -> Result<bool> {
         .map(|digit| char::from(b'0' + digit))
         .collect();
 
-    // Hash the OTP before storing
     let otp_hash = hash_otp(&otp).await;
     let otp_hash_hex = hex::encode(&otp_hash);
 
-    // Create OTP record with expiration (5 minutes from now)
     let now = Utc::now();
     let expires_at = now + Duration::minutes(5);
 
@@ -233,10 +246,11 @@ pub async fn send_verification_code(email: &str) -> Result<bool> {
         expires_at: expires_at.to_rfc3339(),
     };
 
+    // TODO: OTP should store in memory cache with TTL
     // Store OTP in datastore
     let otp_datastore =
         DataStore::<String, OtpRecord>::new(get_data_path().await.join("otps.json"))?;
-    otp_datastore.insert(email.to_string(), otp_record)?;
+    otp_datastore.insert_save(email.to_string(), otp_record)?;
 
     let html_body = format!(
         r#"

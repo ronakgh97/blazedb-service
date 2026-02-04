@@ -42,7 +42,7 @@ pub struct VerifyOtpResponse {
     pub is_verified: bool,
     pub message: String,
     pub api_key: Option<String>, // Return plain API key ONLY once after verification
-    // pub instance_url: Option<String>, // Return instance URL ONLY once after verification
+    pub instance_id: Option<String>, // Return PROXY ID that points to user's instance
 }
 
 /// Structure representing an OTP record
