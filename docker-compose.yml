@@ -1,0 +1,32 @@
+services:
+  blaze-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: blaze-service:latest
+    container_name: blaze_service
+    env_file:
+      - .env
+    ports:
+      - "3000:3000"
+    volumes:
+      - blaze_service_data:/home/blz_service
+    environment:
+      - RUST_LOG=info
+      - HOME=/home/blaze-service
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "test", "-f", "/app/blz_service" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - blaze-service_network
+
+volumes:
+  blaze_service_data:
+    driver: local
+
+networks:
+  blaze-service_network:
+    driver: bridge
