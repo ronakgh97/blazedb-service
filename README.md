@@ -29,6 +29,7 @@ Blaze Service handles the complete lifecycle of BlazeDB instances for SaaS custo
 - Automatic OTP cleanup (5-minute expiration)
 - RESTful API with Axum
 - Multi-tier Storage (data, logs, billing)
+- Cloudflare Proxy Integration (SSL termination & forwarding)
 
 ### 🚧 Coming Soon
 
@@ -42,11 +43,11 @@ Blaze Service handles the complete lifecycle of BlazeDB instances for SaaS custo
 - Usage Tracking & Quotas
 - Database Backup & Restore
 
-## 💾 Storage Engine (Mhm, Databases are boring 😔)
+## 💾 Storage Engine (Its super verbose 😖, Gotta switch to Redis, I gave up)
 
 Blaze Service uses a custom-built JSON-based key-value storage engine with:
 
-- **ACID-like guarantees** via file locking
+- **ACID-like guarantees** via locking
 - **Memory-mapped I/O** for performance
 - **Atomic writes** with backup recovery
 - **Type-safe operations** with generics
@@ -56,9 +57,9 @@ See [Storage engine Impl](src/server/storage.rs) for details.
 ## 📋 Subscription Plans
 
 | Plan                   | Price/Month | Databases | Vectors/DB | Features                                                                                         |
-| ---------------------- | ----------- | --------- | ---------- | ------------------------------------------------------------------------------------------------ |
-| **Free**               | $0          | 2         | 10K        | Shared User Space + Any Dimensions + Example Amazon Demo Dataset + Limited API Endpoints         |
-| **Starter**            | $12         | 10        | 100K       | Dedicated User Space + Any Dimensions + Example Amazon Demo Dataset                              |
+|------------------------|-------------|-----------|------------|--------------------------------------------------------------------------------------------------|
+| **Free**               | $0          | 5         | 5K         | Dedicated User Space (CPU: 3) + Any Dimensions + Example Amazon Demo Dataset                     |
+| **Starter**            | $12         | 10        | 100K       | Dedicated User Space (CPU: 6) + Any Dimensions + Example Amazon Demo Dataset                     |
 | **Pro** (Not sure yet) | $19         | 20        | 500K       | Dedicated User Space and Instance + Any Dimensions + Example Amazon Demo Dataset + Embedding API |
 
 ## 🔐 Security
