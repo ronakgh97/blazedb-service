@@ -60,7 +60,7 @@ async fn create_router() -> Router {
 // Start background cleanup task for OTPs
 pub async fn start_cleanup_task() {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
         loop {
             interval.tick().await;
             match cleanup_expired_otps().await {

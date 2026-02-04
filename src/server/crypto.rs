@@ -38,10 +38,22 @@ impl APIKey {
     }
 
     /// Verifies if the provided plain API key matches this stored hash
+    /// The key format embeds the email, but we still verify the full key hash
     pub async fn verify(&self, plain_key: &str) -> bool {
         if self.is_revoked {
             return false;
         }
+
+        // Verify email matches (quick check)
+        if let Some(extracted_email) = extract_email_from_api_key(plain_key) {
+            if extracted_email != self.user_email {
+                return false;
+            }
+        } else {
+            return false; // Invalid format
+        }
+
+        // Verify full key hash (security check)
         let key_hash = hash_api_key(plain_key).await;
         key_hash == self.api_key_hash
     }
@@ -69,12 +81,34 @@ pub async fn generate_key(user_name: &str, user_email: &str, salt: &[u8]) -> Vec
     key
 }
 
-/// Generates an API key for the user by combining a derived key and a salt.
-/// The API key is formatted as "blz_<key>_<salt>"
-pub async fn generate_api_key(user_name: &str, user_email: &str) -> String {
-    let salt = generate_salt(20).await;
-    let key = generate_key(user_name, user_email, &salt).await;
-    format!("blz_{}_{}", hex::encode(&key), hex::encode(&salt))
+/// Generates an API key for the user.
+/// Format: "blz_{base64_email}_{random_secret}"
+/// This allows extracting the user email directly from the key (O(1) user lookup)
+pub async fn generate_api_key(_user_name: &str, user_email: &str) -> String {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+
+    let email_encoded = URL_SAFE_NO_PAD.encode(user_email.as_bytes());
+
+    // Generate random secret (32 bytes = 256 bits of entropy)
+    let secret = generate_salt(32).await;
+    let secret_encoded = hex::encode(&secret);
+
+    format!("blz_{}_{}", email_encoded, secret_encoded)
+}
+
+/// Extracts the user email from an API key
+/// Returns None if the key format is invalid
+pub fn extract_email_from_api_key(api_key: &str) -> Option<String> {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+
+    // Expected format: blz_{base64_email}_{secret}
+    let parts: Vec<&str> = api_key.split('_').collect();
+    if parts.len() != 3 || parts[0] != "blz" {
+        return None;
+    }
+
+    let email_bytes = URL_SAFE_NO_PAD.decode(parts[1]).ok()?;
+    String::from_utf8(email_bytes).ok()
 }
 
 /// Hashes the provided one-time password (OTP) using SHA-256.

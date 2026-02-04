@@ -23,6 +23,7 @@ const OTP_COOLDOWN_SECONDS: i64 = 30; // 30 seconds cooldown between OTP request
 static OTP_RATE_LIMIT: std::sync::OnceLock<Arc<RwLock<HashMap<String, i64>>>> =
     std::sync::OnceLock::new();
 static USER_STORE: std::sync::OnceLock<DataStore<String, User>> = std::sync::OnceLock::new();
+
 fn get_otp_cache() -> Arc<RwLock<HashMap<String, OtpRecord>>> {
     OTP_CACHE
         .get_or_init(|| Arc::new(RwLock::new(HashMap::new())))
@@ -37,7 +38,8 @@ async fn get_user_store() -> DataStore<String, User> {
     USER_STORE
         .get_or_init(|| {
             let path = get_data_path().join("users.json");
-            DataStore::<String, User>::new(path).unwrap()
+            DataStore::<String, User>::new(path)
+                .expect("CRASH!! Failed to initialize user datastore")
         })
         .clone()
 }
@@ -78,7 +80,7 @@ pub fn get_billing_path() -> PathBuf {
     home_dir.join("blz_service").join("billings")
 }
 
-/// Saves a new user to the datastore (disk) and returns a response indicating success.
+/// Saves to new user to In-Memory datastore
 pub async fn save_user(user_data: &UserRegisterRequest) -> Result<UserRegisterResponse> {
     let user_store = get_user_store().await;
 
@@ -93,7 +95,8 @@ pub async fn save_user(user_data: &UserRegisterRequest) -> Result<UserRegisterRe
         created_at: Utc::now().to_rfc3339(),
     };
 
-    // Insert in memory only - periodic background task will save to disk
+    // Insert in memory only
+    // Periodic background task will save to disk
     user_store.insert_mem(user_data.email.clone(), user)?;
 
     let response = UserRegisterResponse {
@@ -192,10 +195,8 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
         });
     }
 
-    // OTP is valid - update user verification status
     let user_datastore = get_user_store().await;
 
-    // Get user by email (direct lookup since email is the key)
     let mut user = match user_datastore.get(&data.email)? {
         Some(u) => u,
         None => {
@@ -208,7 +209,7 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
         }
     };
 
-    // Update verification status (memory only)
+    // Update verification status
     user.is_verified = true;
     user_datastore.insert_mem(data.email.clone(), user)?;
 
@@ -223,6 +224,8 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
     // Assign API key upon successful verification (memory only)
     let mut user = user_datastore.get(&data.email)?.unwrap();
     let (api_key_struct, plain_key) = APIKey::get_new_key(&user.username, &user.email).await;
+
+    // Add to user's API keys
     user.api_key.push(api_key_struct.clone());
     user_datastore.insert_mem(data.email.clone(), user.clone())?;
 
@@ -235,21 +238,29 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
 }
 
 /// Verifies an API key and returns the associated user email if valid
-/// Returns None if the key is invalid or revoked
+/// Returns None if the key is invalid, revoked, or not found
 pub async fn verify_api_key(api_key: &str) -> Result<Option<String>> {
-    let user_datastore = get_user_store().await;
-    let all_users = user_datastore.values()?;
+    // Extract email from API key (format: blz_{base64_email}_{secret})
+    let email = match crate::server::crypto::extract_email_from_api_key(api_key) {
+        Some(e) => e,
+        None => return Ok(None), // Invalid format
+    };
 
-    // Search through all users for a matching API key
-    for user in all_users {
-        for key in &user.api_key {
-            if key.verify(api_key).await {
-                return Ok(Some(user.email.clone()));
-            }
+    // Get user from storage
+    let user_datastore = get_user_store().await;
+    let user = match user_datastore.get(&email)? {
+        Some(u) => u,
+        None => return Ok(None), // User not found
+    };
+
+    // Verify the key against user's stored keys
+    for stored_key in &user.api_key {
+        if stored_key.verify(api_key).await {
+            return Ok(Some(email));
         }
     }
 
-    Ok(None)
+    Ok(None) // Key not found or revoked
 }
 
 /// Just Sends a verification code (OTP) to the specified email address and stores the hashed OTP in the datastore
@@ -295,7 +306,7 @@ pub async fn send_verification_code(email: &str) -> Result<bool> {
         expires_at: expires_at.to_rfc3339(),
     };
 
-    // Store OTP in thread-safe in-memory cache
+    // Store OTP in-memory cache
     let otp_cache = get_otp_cache();
     {
         let mut cache_write = otp_cache.write().await;
@@ -430,8 +441,10 @@ pub async fn cleanup_expired_otps() -> Result<usize> {
     let otp_cache = get_otp_cache();
     let rate_limit_cache = get_rate_limit_cache();
     let now = Utc::now();
+    let now_timestamp = now.timestamp();
     let mut removed_count = 0;
 
+    // Collect expired OTP emails
     let expired_emails: Vec<String> = {
         let cache_read = otp_cache.read().await;
         cache_read
@@ -447,18 +460,25 @@ pub async fn cleanup_expired_otps() -> Result<usize> {
             .collect()
     };
 
-    // Remove expired OTPs
+    // Remove expired OTPs older than 1 minute
     if !expired_emails.is_empty() {
         let mut cache_write = otp_cache.write().await;
         for email in &expired_emails {
             cache_write.remove(email);
             removed_count += 1;
-            info!("Cleaned up expired OTP for {}", email);
         }
     }
 
-    let mut rate_write = rate_limit_cache.write().await;
-    rate_write.clear();
+    // Remove rate limits older than cooldown period (30 seconds)
+    {
+        let mut rate_write = rate_limit_cache.write().await;
+        rate_write.retain(|_email, &mut timestamp| {
+            let elapsed = now_timestamp - timestamp;
+            let keep = elapsed < OTP_COOLDOWN_SECONDS;
+            keep
+        });
+    }
+
     Ok(removed_count)
 }
 
@@ -531,3 +551,58 @@ pub async fn get_all_pro_users() -> Result<Vec<User>> {
 
     Ok(pro_users)
 }
+
+// /// Generates a new API key for an existing user
+// /// Supports multiple API keys per user
+// pub async fn generate_additional_api_key(email: &str) -> Result<String> {
+//     let user_datastore = get_user_store().await;
+//     let email_key = email.to_string();
+//
+//     let mut user = match user_datastore.get(&email_key)? {
+//         Some(u) => u,
+//         None => return Err(anyhow::anyhow!("User not found")),
+//     };
+//
+//     if !user.is_verified {
+//         return Err(anyhow::anyhow!("User is not verified"));
+//     }
+//
+//     // Generate new API key
+//     let (api_key_struct, plain_key) = APIKey::get_new_key(&user.username, &user.email).await;
+//
+//     // Add to user's API keys
+//     user.api_key.push(api_key_struct.clone());
+//     user_datastore.insert_mem(email_key.clone(), user)?;
+//
+//     info!("Generated additional API key for user {}", email);
+//     Ok(plain_key)
+// }
+//
+// /// Revokes a specific API key for a user
+// pub async fn revoke_api_key(email: &str, key_prefix: &str) -> Result<bool> {
+//     let user_datastore = get_user_store().await;
+//     let email_key = email.to_string();
+//
+//     let mut user = match user_datastore.get(&email_key)? {
+//         Some(u) => u,
+//         None => return Err(anyhow::anyhow!("User not found")),
+//     };
+//
+//     // Find and revoke the key
+//     let mut found = false;
+//     for key in &mut user.api_key {
+//         if key.key_prefix == key_prefix {
+//             key.is_revoked = true;
+//             found = true;
+//
+//             info!("Revoked API key {} for user {}", key_prefix, email);
+//             break;
+//         }
+//     }
+//
+//     if found {
+//         user_datastore.insert_mem(email_key, user)?;
+//     }
+//
+//     Ok(found)
+// }
