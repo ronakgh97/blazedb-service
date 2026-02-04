@@ -11,6 +11,6 @@ pub mod prelude {
     };
     pub use crate::server::service::{
         cleanup_expired_otps, create_dirs, create_logs_dir, get_billing_path, get_data_path,
-        get_logs_path, verify_otp as verify_otp_service,
+        get_logs_path, periodic_save_users, verify_otp as verify_otp_service,
     };
 }

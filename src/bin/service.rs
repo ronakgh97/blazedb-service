@@ -7,7 +7,7 @@ use blaze_service::prelude::*;
 use blaze_service::server::schema::{UserData, UserStats};
 use blaze_service::server::service::{
     get_all_free_users, get_all_pro_users, get_all_starter_users, get_unverified_users,
-    is_user_exists, is_user_verified, save_user, verify_user,
+    is_user_exists, is_user_verified, periodic_save_users, save_user, verify_user,
 };
 use blaze_service::{error, info, warn};
 use std::sync::OnceLock;
@@ -28,7 +28,10 @@ async fn main() -> Result<()> {
     let app = create_router().await;
 
     let addr = format!("0.0.0.0:{}", port);
+
     start_cleanup_task().await;
+    start_user_save_task().await;
+
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     let server_time = chrono::Local::now();
 
@@ -54,7 +57,7 @@ async fn create_router() -> Router {
     // .route("/account/status", get(account_status))
 }
 
-// Start background cleanup task
+// Start background cleanup task for OTPs
 pub async fn start_cleanup_task() {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
@@ -67,6 +70,20 @@ pub async fn start_cleanup_task() {
                     }
                 }
                 Err(e) => error!("OTP cleanup failed: {}", e),
+            }
+        }
+    });
+}
+
+// Start background task to periodically save users to disk
+pub async fn start_user_save_task() {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+        loop {
+            interval.tick().await;
+            match periodic_save_users().await {
+                Ok(_) => {}
+                Err(e) => error!("User save failed: {}", e),
             }
         }
     });

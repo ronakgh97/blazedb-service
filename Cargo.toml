@@ -9,7 +9,7 @@ name = "blz_service"
 path = "src/bin/service.rs"
 
 #[[bin]]
-#Fname = "blz-proxy"
+#name = "blz-proxy"
 #path = "src/bin/proxy.rs"
 
 [lib]

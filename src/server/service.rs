@@ -12,13 +12,41 @@ use lettre::transport::smtp::authentication::Credentials;
 use lettre::{Message, SmtpTransport, Transport};
 use rayon::iter::ParallelIterator;
 use rayon::prelude::IntoParallelRefIterator;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+static OTP_CACHE: std::sync::OnceLock<Arc<RwLock<HashMap<String, OtpRecord>>>> =
+    std::sync::OnceLock::new();
+const OTP_COOLDOWN_SECONDS: i64 = 30; // 30 seconds cooldown between OTP requests
+static OTP_RATE_LIMIT: std::sync::OnceLock<Arc<RwLock<HashMap<String, i64>>>> =
+    std::sync::OnceLock::new();
+static USER_STORE: std::sync::OnceLock<DataStore<String, User>> = std::sync::OnceLock::new();
+fn get_otp_cache() -> Arc<RwLock<HashMap<String, OtpRecord>>> {
+    OTP_CACHE
+        .get_or_init(|| Arc::new(RwLock::new(HashMap::new())))
+        .clone()
+}
+fn get_rate_limit_cache() -> Arc<RwLock<HashMap<String, i64>>> {
+    OTP_RATE_LIMIT
+        .get_or_init(|| Arc::new(RwLock::new(HashMap::new())))
+        .clone()
+}
+async fn get_user_store() -> DataStore<String, User> {
+    USER_STORE
+        .get_or_init(|| {
+            let path = get_data_path().join("users.json");
+            DataStore::<String, User>::new(path).unwrap()
+        })
+        .clone()
+}
 
 /// Creates necessary directories for the service: data, logs, and billing.
 pub async fn create_dirs() -> Result<()> {
-    let data_path = get_data_path().await;
-    let logs_path = get_logs_path().await;
-    let billing_path = get_billing_path().await;
+    let data_path = get_data_path();
+    let logs_path = get_logs_path();
+    let billing_path = get_billing_path();
 
     tokio::fs::create_dir_all(&data_path).await?;
     tokio::fs::create_dir_all(&logs_path).await?;
@@ -28,31 +56,31 @@ pub async fn create_dirs() -> Result<()> {
 
 /// Creates a daily log directory based on the current date.
 pub async fn create_logs_dir() -> Result<PathBuf> {
-    let logs_path = get_logs_path().await;
+    let logs_path = get_logs_path();
     let server_time = chrono::Local::now();
     let daily_log_path = logs_path.join(server_time.format("%Y-%m-%d").to_string());
     tokio::fs::create_dir_all(&daily_log_path).await?;
     Ok(daily_log_path)
 }
 
-pub async fn get_data_path() -> PathBuf {
+pub fn get_data_path() -> PathBuf {
     let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     home_dir.join("blz_service").join("data")
 }
 
-pub async fn get_logs_path() -> PathBuf {
+pub fn get_logs_path() -> PathBuf {
     let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     home_dir.join("blz_service").join("logs")
 }
 
-pub async fn get_billing_path() -> PathBuf {
+pub fn get_billing_path() -> PathBuf {
     let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     home_dir.join("blz_service").join("billings")
 }
 
 /// Saves a new user to the datastore (disk) and returns a response indicating success.
 pub async fn save_user(user_data: &UserRegisterRequest) -> Result<UserRegisterResponse> {
-    let user_store = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
+    let user_store = get_user_store().await;
 
     // Create a user with email as the key
     let user = User {
@@ -65,7 +93,8 @@ pub async fn save_user(user_data: &UserRegisterRequest) -> Result<UserRegisterRe
         created_at: Utc::now().to_rfc3339(),
     };
 
-    user_store.insert_save(user_data.email.clone(), user)?;
+    // Insert in memory only - periodic background task will save to disk
+    user_store.insert_mem(user_data.email.clone(), user)?;
 
     let response = UserRegisterResponse {
         email: user_data.email.clone(),
@@ -76,19 +105,9 @@ pub async fn save_user(user_data: &UserRegisterRequest) -> Result<UserRegisterRe
     Ok(response)
 }
 
-// /// Saves the generated API key for the user in the datastore (disk).
-// /// Handy method for fast lookup on proxy requests without needing to search through all users.
-// pub async fn save_secret(apikey: APIKey, user_data: &User) -> Result<()> {
-//     let secret_store = DataStore::<APIKey, User>::new(get_data_path().await.join("secrets.json"))?;
-// 
-//     secret_store.insert_save(apikey, user_data.clone())?;
-// 
-//     Ok(())
-// }
-
 /// Checks if a user with the given email exists in the datastore.
 pub async fn is_user_exists(email: &String) -> Result<bool> {
-    let datastore = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
+    let datastore = get_user_store().await;
     if let Some(_user) = datastore.get(email)? {
         Ok(true)
     } else {
@@ -98,7 +117,7 @@ pub async fn is_user_exists(email: &String) -> Result<bool> {
 
 /// Checks if the user with the given email is verified
 pub async fn is_user_verified(email: &String) -> Result<bool> {
-    let datastore = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
+    let datastore = get_user_store().await;
     if let Some(user) = datastore.get(email)? {
         Ok(user.is_verified)
     } else {
@@ -123,11 +142,15 @@ pub async fn verify_user(data: &VerifyEmailRequest) -> Result<VerifyEmailRespons
 // TODO: Decouple the checks for explicit error status code
 /// Verifies the OTP code provided by the user and updates their verification status
 pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
-    let otp_datastore =
-        DataStore::<String, OtpRecord>::new(get_data_path().await.join("otps.json"))?;
+    let otp_cache = get_otp_cache();
 
     // Check if OTP record exists for this email
-    let otp_record = match otp_datastore.get(&data.email)? {
+    let otp_record = {
+        let cache_read = otp_cache.read().await;
+        cache_read.get(&data.email).cloned()
+    };
+
+    let otp_record = match otp_record {
         Some(record) => record,
         None => {
             return Ok(VerifyOtpResponse {
@@ -146,7 +169,8 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
 
     if now > expires_at {
         // Clean up expired OTP
-        otp_datastore.delete(&data.email)?;
+        let mut cache_write = otp_cache.write().await;
+        cache_write.remove(&data.email);
         return Ok(VerifyOtpResponse {
             is_verified: false,
             message: "Verification code has expired".to_string(),
@@ -169,7 +193,7 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
     }
 
     // OTP is valid - update user verification status
-    let user_datastore = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
+    let user_datastore = get_user_store().await;
 
     // Get user by email (direct lookup since email is the key)
     let mut user = match user_datastore.get(&data.email)? {
@@ -184,20 +208,23 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
         }
     };
 
-    // Update verification status
+    // Update verification status (memory only)
     user.is_verified = true;
-    user_datastore.insert_save(data.email.clone(), user)?;
+    user_datastore.insert_mem(data.email.clone(), user)?;
 
-    // Clean up used OTP
-    otp_datastore.delete(&data.email)?;
+    // Clean up used OTP from memory cache
+    {
+        let mut cache_write = otp_cache.write().await;
+        cache_write.remove(&data.email);
+    }
 
     info!("User {} successfully verified", data.email);
 
-    // Assign API key upon successful verification
+    // Assign API key upon successful verification (memory only)
     let mut user = user_datastore.get(&data.email)?.unwrap();
     let (api_key_struct, plain_key) = APIKey::get_new_key(&user.username, &user.email).await;
     user.api_key.push(api_key_struct.clone());
-    user_datastore.insert_save(data.email.clone(), user.clone())?;
+    user_datastore.insert_mem(data.email.clone(), user.clone())?;
 
     Ok(VerifyOtpResponse {
         is_verified: true,
@@ -210,7 +237,7 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
 /// Verifies an API key and returns the associated user email if valid
 /// Returns None if the key is invalid or revoked
 pub async fn verify_api_key(api_key: &str) -> Result<Option<String>> {
-    let user_datastore = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
+    let user_datastore = get_user_store().await;
     let all_users = user_datastore.values()?;
 
     // Search through all users for a matching API key
@@ -227,6 +254,28 @@ pub async fn verify_api_key(api_key: &str) -> Result<Option<String>> {
 
 /// Just Sends a verification code (OTP) to the specified email address and stores the hashed OTP in the datastore
 pub async fn send_verification_code(email: &str) -> Result<bool> {
+    let rate_limit_cache = get_rate_limit_cache();
+    let now_timestamp = Utc::now().timestamp();
+
+    // Check rate limiting
+    {
+        let rate_read = rate_limit_cache.read().await;
+        if let Some(&last_request) = rate_read.get(email) {
+            let elapsed = now_timestamp - last_request;
+            if elapsed < OTP_COOLDOWN_SECONDS {
+                let remaining = OTP_COOLDOWN_SECONDS - elapsed;
+                info!(
+                    "Rate limit hit for {}: {} seconds remaining",
+                    email, remaining
+                );
+                return Err(anyhow::anyhow!(
+                    "Please wait {} seconds before requesting a new code",
+                    remaining
+                ));
+            }
+        }
+    }
+
     // Generate a random 6-digit OTP
     let otp: String = (0..6)
         .map(|_| rand::random::<u8>() % 10)
@@ -237,7 +286,7 @@ pub async fn send_verification_code(email: &str) -> Result<bool> {
     let otp_hash_hex = hex::encode(&otp_hash);
 
     let now = Utc::now();
-    let expires_at = now + Duration::minutes(5);
+    let expires_at = now + Duration::minutes(1); // OTP valid for 1 minute
 
     let otp_record = OtpRecord {
         email: email.to_string(),
@@ -246,11 +295,12 @@ pub async fn send_verification_code(email: &str) -> Result<bool> {
         expires_at: expires_at.to_rfc3339(),
     };
 
-    // TODO: OTP should store in memory cache with TTL
-    // Store OTP in datastore
-    let otp_datastore =
-        DataStore::<String, OtpRecord>::new(get_data_path().await.join("otps.json"))?;
-    otp_datastore.insert_save(email.to_string(), otp_record)?;
+    // Store OTP in thread-safe in-memory cache
+    let otp_cache = get_otp_cache();
+    {
+        let mut cache_write = otp_cache.write().await;
+        cache_write.insert(email.to_string(), otp_record.clone());
+    }
 
     let html_body = format!(
         r#"
@@ -354,11 +404,19 @@ pub async fn send_verification_code(email: &str) -> Result<bool> {
         .build();
 
     let response: bool = match mailer.send(&email_message) {
-        Ok(_) => true,
+        Ok(_) => {
+            // Update rate limit timestamp on successful send
+            let mut rate_write = rate_limit_cache.write().await;
+            rate_write.insert(email.to_string(), now_timestamp);
+            info!("OTP sent to {} (rate limit updated)", email);
+            true
+        }
         Err(e) => {
             error!("Could not send email: {:?}", e);
-            // Clean up OTP record if email fails
-            let _ = otp_datastore.delete(&email.to_string());
+            // Clean up OTP record from memory cache if email fails
+            let otp_cache = get_otp_cache();
+            let mut cache_write = otp_cache.write().await;
+            cache_write.remove(&email.to_string());
             false
         }
     };
@@ -366,43 +424,61 @@ pub async fn send_verification_code(email: &str) -> Result<bool> {
     Ok(response)
 }
 
-/// Cleans up expired OTP records from the datastore
-/// This should be called periodically (e.g., via a background task)
+/// Cleans up expired OTP records from the in-memory cache
+/// This is called periodically via a background task
 pub async fn cleanup_expired_otps() -> Result<usize> {
-    let otp_datastore =
-        DataStore::<String, OtpRecord>::new(get_data_path().await.join("otps.json"))?;
-
+    let otp_cache = get_otp_cache();
+    let rate_limit_cache = get_rate_limit_cache();
     let now = Utc::now();
-    let entries = otp_datastore.entries()?;
     let mut removed_count = 0;
 
-    for (email, record) in entries {
-        if let Ok(expires_at) = chrono::DateTime::parse_from_rfc3339(&record.expires_at) {
-            if now > expires_at.with_timezone(&Utc) {
-                otp_datastore.delete(&email)?;
-                removed_count += 1;
-                info!("Cleaned up expired OTP for {}", email);
-            }
+    let expired_emails: Vec<String> = {
+        let cache_read = otp_cache.read().await;
+        cache_read
+            .iter()
+            .filter_map(|(email, record)| {
+                if let Ok(expires_at) = chrono::DateTime::parse_from_rfc3339(&record.expires_at) {
+                    if now > expires_at.with_timezone(&Utc) {
+                        return Some(email.clone());
+                    }
+                }
+                None
+            })
+            .collect()
+    };
+
+    // Remove expired OTPs
+    if !expired_emails.is_empty() {
+        let mut cache_write = otp_cache.write().await;
+        for email in &expired_emails {
+            cache_write.remove(email);
+            removed_count += 1;
+            info!("Cleaned up expired OTP for {}", email);
         }
     }
 
-    if removed_count > 0 {
-        info!("Cleaned up {} expired OTP(s)", removed_count);
-    }
-
+    let mut rate_write = rate_limit_cache.write().await;
+    rate_write.clear();
     Ok(removed_count)
+}
+
+/// Periodically saves user data from memory to disk
+pub async fn periodic_save_users() -> Result<()> {
+    let user_store = get_user_store().await;
+    user_store.save_to_disk()?;
+    Ok(())
 }
 
 /// Retrieves all users from the datastore
 pub async fn get_all_users() -> Result<Vec<User>> {
-    let user_datastore = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
+    let user_datastore = get_user_store().await;
     let all_users = user_datastore.values()?;
     Ok(all_users)
 }
 
 /// Retrieves all users who are not verified
 pub async fn get_unverified_users() -> Result<Vec<User>> {
-    let user_datastore = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
+    let user_datastore = get_user_store().await;
     let all_users = user_datastore.values()?;
 
     let unverified_users: Vec<User> = all_users
@@ -416,7 +492,7 @@ pub async fn get_unverified_users() -> Result<Vec<User>> {
 
 /// Retrieves all users who are on the free plan
 pub async fn get_all_free_users() -> Result<Vec<User>> {
-    let user_datastore = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
+    let user_datastore = get_user_store().await;
     let all_users = user_datastore.values()?;
 
     let free_users: Vec<User> = all_users
@@ -430,7 +506,7 @@ pub async fn get_all_free_users() -> Result<Vec<User>> {
 
 /// Retrieves all users who are on the starter plan
 pub async fn get_all_starter_users() -> Result<Vec<User>> {
-    let user_datastore = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
+    let user_datastore = get_user_store().await;
     let all_users = user_datastore.values()?;
 
     let starter_users: Vec<User> = all_users
@@ -444,7 +520,7 @@ pub async fn get_all_starter_users() -> Result<Vec<User>> {
 
 /// Retrieves all users who are on the pro plan
 pub async fn get_all_pro_users() -> Result<Vec<User>> {
-    let user_datastore = DataStore::<String, User>::new(get_data_path().await.join("users.json"))?;
+    let user_datastore = get_user_store().await;
     let all_users = user_datastore.values()?;
 
     let pro_users: Vec<User> = all_users

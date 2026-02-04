@@ -104,7 +104,7 @@ pub struct Feature {
     pub database_no: u32,
     pub vector_per_db: u32,
     pub demo_datasets_included: bool,
-    pub dedicated_server_instance: bool,
+    pub dedicated_user_space: bool,
     pub embedding_api_access: bool,
 }
 
@@ -114,10 +114,10 @@ impl Plans {
             name: "Free".to_string(),
             price_per_month: 0,
             features: Feature {
-                database_no: 1,
-                vector_per_db: 10_000,
+                database_no: 5,
+                vector_per_db: 5_000,
                 demo_datasets_included: true,
-                dedicated_server_instance: false,
+                dedicated_user_space: true,
                 embedding_api_access: false,
             },
         }
@@ -126,13 +126,13 @@ impl Plans {
     pub fn starter_plan() -> Self {
         Plans {
             name: "Starter".to_string(),
-            price_per_month: 9,
+            price_per_month: 12,
             features: Feature {
                 database_no: 10,
                 vector_per_db: 100_000,
                 demo_datasets_included: true,
-                dedicated_server_instance: true,
-                embedding_api_access: true,
+                dedicated_user_space: true,
+                embedding_api_access: false,
             },
         }
     }
@@ -140,12 +140,12 @@ impl Plans {
     pub fn pro_plan() -> Self {
         Plans {
             name: "Pro".to_string(),
-            price_per_month: 29,
+            price_per_month: 19,
             features: Feature {
-                database_no: 100,
-                vector_per_db: 10_00_000,
+                database_no: 20,
+                vector_per_db: 500_000,
                 demo_datasets_included: true,
-                dedicated_server_instance: true,
+                dedicated_user_space: true,
                 embedding_api_access: true,
             },
         }
