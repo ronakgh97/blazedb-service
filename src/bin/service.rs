@@ -255,10 +255,7 @@ async fn auth_verify_email(Json(payload): Json<VerifyEmailRequest>) -> impl Into
     }
 
     match verify_user(&payload).await {
-        Ok(response) => {
-            info!("Verification code sent to email: {}", payload.email);
-            (StatusCode::OK, Json(response))
-        }
+        Ok(response) => (StatusCode::OK, Json(response)),
         Err(e) => {
             error!(
                 "Email verification failed for email: {}, Error: {:?}",
@@ -293,7 +290,14 @@ async fn auth_verify_code(Json(payload): Json<VerifyOtpRequest>) -> impl IntoRes
     }
     match verify_otp_service(&payload).await {
         Ok(response) => {
-            info!("OTP verified for email: {}", payload.email);
+            if response.is_verified {
+                info!("OTP verified for email: {}", payload.email);
+            } else {
+                warn!(
+                    "OTP verification failed for email: {}: {}",
+                    payload.email, response.message
+                );
+            }
             (StatusCode::OK, Json(response))
         }
         Err(e) => {

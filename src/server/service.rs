@@ -1,12 +1,13 @@
 pub use crate::prelude::{
     Plans, User, UserRegisterRequest, UserRegisterResponse, VerifyEmailRequest, VerifyEmailResponse,
 };
+use crate::server::container::get_unique_instance_id;
 use crate::server::crypto::{APIKey, hash_otp, verify_otp as crypto_verify_otp};
 pub use crate::server::schema::{OtpRecord, UserStats, VerifyOtpRequest, VerifyOtpResponse};
 use crate::server::storage::DataStore;
 use crate::{error, info};
 use anyhow::Result;
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use lettre::message::{MultiPart, SinglePart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{Message, SmtpTransport, Transport};
@@ -19,9 +20,9 @@ use tokio::sync::RwLock;
 
 static OTP_CACHE: std::sync::OnceLock<Arc<RwLock<HashMap<String, OtpRecord>>>> =
     std::sync::OnceLock::new();
-const OTP_COOLDOWN_SECONDS: i64 = 30; // 30 seconds cooldown between OTP requests
 static OTP_RATE_LIMIT: std::sync::OnceLock<Arc<RwLock<HashMap<String, i64>>>> =
     std::sync::OnceLock::new();
+const OTP_COOLDOWN_SECONDS: i64 = 30; // 30 seconds cooldown between OTP requests
 static USER_STORE: std::sync::OnceLock<DataStore<String, User>> = std::sync::OnceLock::new();
 
 fn get_otp_cache() -> Arc<RwLock<HashMap<String, OtpRecord>>> {
@@ -91,7 +92,7 @@ pub async fn save_user(user_data: &UserRegisterRequest) -> Result<UserRegisterRe
         api_key: Vec::new(),
         is_verified: false,
         plans: Plans::free_plan(),
-        instance_url: "".to_string(),
+        instance_id: String::with_capacity(8 * 16),
         created_at: Utc::now().to_rfc3339(),
     };
 
@@ -131,10 +132,13 @@ pub async fn is_user_verified(email: &String) -> Result<bool> {
 /// Initiates the email verification process by sending a verification code to the user's email
 pub async fn verify_user(data: &VerifyEmailRequest) -> Result<VerifyEmailResponse> {
     match send_verification_code(&data.email).await {
-        Ok(is_sent) => Ok(VerifyEmailResponse {
-            is_code_sent: is_sent,
-            error: "".to_string(),
-        }),
+        Ok(is_sent) => {
+            info!("Verification code sent to {}", &data.email);
+            Ok(VerifyEmailResponse {
+                is_code_sent: is_sent,
+                error: "".to_string(),
+            })
+        }
         Err(e) => Ok(VerifyEmailResponse {
             is_code_sent: false,
             error: format!("Failed to send verification code: {}", e),
@@ -167,8 +171,7 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
 
     // Check if OTP has expired
     let now = Utc::now();
-    let expires_at =
-        chrono::DateTime::parse_from_rfc3339(&otp_record.expires_at)?.with_timezone(&Utc);
+    let expires_at = DateTime::parse_from_rfc3339(&otp_record.expires_at)?.with_timezone(&Utc);
 
     if now > expires_at {
         // Clean up expired OTP
@@ -219,11 +222,13 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
         cache_write.remove(&data.email);
     }
 
-    info!("User {} successfully verified", data.email);
-
     // Assign API key upon successful verification (memory only)
     let mut user = user_datastore.get(&data.email)?.unwrap();
     let (api_key_struct, plain_key) = APIKey::get_new_key(&user.username, &user.email).await;
+
+    // Assign instance ID
+    let unique_instance_id = get_unique_instance_id(user.email.clone());
+    user.instance_id = unique_instance_id;
 
     // Add to user's API keys
     user.api_key.push(api_key_struct.clone());
@@ -233,7 +238,7 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
         is_verified: true,
         message: "Email verified successfully".to_string(),
         api_key: Some(plain_key), // Return plain key ONLY this once
-        instance_id: Some("TODO".to_string()), // TODO: Generate and return user-specific instance URL
+        instance_id: Some(user.instance_id),
     })
 }
 
@@ -374,7 +379,7 @@ pub async fn send_verification_code(email: &str) -> Result<bool> {
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>BlazeDB Verification</h1>
+                    <h1> BlazeDB Verification </h1>
                 </div>
                 <div class="content">
                     <p style="font-size: 16px;">Please use the verification code below to get your Free API KEY.</p>
@@ -382,7 +387,7 @@ pub async fn send_verification_code(email: &str) -> Result<bool> {
                     <p style="color: #666; font-size: 14px;">This code will expire in 5 minutes.</p>
                 </div>
                 <div class="footer">
-                    <p>If you didn't request this code, you can safely ignore this email.</p>
+                    <p>If you didn't request this code, you can safely ignore this email 😌.</p>
                 </div>
             </div>
         </body>
@@ -450,7 +455,7 @@ pub async fn cleanup_expired_otps() -> Result<usize> {
         cache_read
             .iter()
             .filter_map(|(email, record)| {
-                if let Ok(expires_at) = chrono::DateTime::parse_from_rfc3339(&record.expires_at) {
+                if let Ok(expires_at) = DateTime::parse_from_rfc3339(&record.expires_at) {
                     if now > expires_at.with_timezone(&Utc) {
                         return Some(email.clone());
                     }
