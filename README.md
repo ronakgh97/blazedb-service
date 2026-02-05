@@ -31,6 +31,7 @@ Blaze Service handles the complete lifecycle of BlazeDB instances for SaaS custo
 - Multi-tier Storage (data, logs, billing)
 - Cloudflare Proxy Integration (SSL termination & forwarding)
 - Docker Deployment (Dockerfile + docker-compose.yml) (Service only, no Proxy yet)
+- BlazeDB Instance Management (provisioning, scaling, isolation) `BASIC IMPLEMENTATION`
 
 ### 🚧 Coming Soon
 
@@ -40,9 +41,11 @@ Blaze Service handles the complete lifecycle of BlazeDB instances for SaaS custo
 - Embedding API Access
 - Enhanced Monitoring & Logging
 - Rate Limiting & Throttling
-- BlazeDB Instance Provisioning
-- Usage Tracking & Quotas
 - Database Backup & Restore
+- Plan & Quota Enforcement
+- Admin Dashboard for User & Instance Management
+- Better error handling and validation
+- Some Edge cases in verification and instance provisioning
 
 ## 💾 Storage Engine (No external DBs)
 
@@ -70,7 +73,7 @@ or RocksDB later 😔
 ## 🔐 Security
 
 - **OTP Hashing:** PBKDF2-HMAC-SHA256 (600,000 iterations)
-- **Email Verification:** 6-digit codes with 5-minute expiration
+- **Email Verification:** 6-digit codes with 1-minute expiration
 - **API Keys:** Secure random generation + SHA-256 hashing
 - **One-time Key Display:** API keys shown only once upon verification
 - **Data Isolation:** Per-user instance segregation

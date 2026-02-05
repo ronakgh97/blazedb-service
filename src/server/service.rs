@@ -2,7 +2,9 @@ pub use crate::prelude::{
     Plans, User, UserRegisterRequest, UserRegisterResponse, VerifyEmailRequest, VerifyEmailResponse,
 };
 use crate::server::container::{get_unique_instance_id, spawn_blazedb_container};
-use crate::server::crypto::{APIKey, hash_otp, verify_otp as crypto_verify_otp};
+use crate::server::crypto::{
+    APIKey, extract_email_from_api_key, hash_otp, verify_otp as crypto_verify_otp,
+};
 pub use crate::server::schema::{OtpRecord, UserStats, VerifyOtpRequest, VerifyOtpResponse};
 use crate::server::storage::DataStore;
 use crate::{error, info};
@@ -202,7 +204,12 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
 
     let mut user = match user_datastore.get(&data.email)? {
         Some(u) => u,
+        // README: Edge case, This should not happen because user must exist to have OTP, but just in case
         None => {
+            {
+                let mut cache_write = otp_cache.write().await;
+                cache_write.remove(&data.email);
+            }
             return Ok(VerifyOtpResponse {
                 is_verified: false,
                 message: "User not found".to_string(),
@@ -212,27 +219,28 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
         }
     };
 
-    // Update verification status
+    // Do all updates first, then write back, if any fails before writing
+    // So that the user is not updated or data is corrupted and can retry OTP verification without issues
+
+    // Update user verification status
     user.is_verified = true;
-    user_datastore.insert_mem(data.email.clone(), user)?;
+
+    // Assign instance ID
+    let unique_instance_id = get_unique_instance_id(user.email.clone());
+    user.instance_id = unique_instance_id.clone();
+
+    // Assign API key upon successful verification
+    let (api_key_struct, plain_key) = APIKey::get_new_key(&user.username, &user.email).await;
+    user.api_key.push(api_key_struct.clone());
+
+    // Write back ALL changes atomically
+    user_datastore.insert_mem(data.email.clone(), user.clone())?;
 
     // Clean up used OTP from memory cache
     {
         let mut cache_write = otp_cache.write().await;
         cache_write.remove(&data.email);
     }
-
-    // Assign API key upon successful verification (memory only)
-    let mut user = user_datastore.get(&data.email)?.unwrap();
-    let (api_key_struct, plain_key) = APIKey::get_new_key(&user.username, &user.email).await;
-
-    // Assign instance ID
-    let unique_instance_id = get_unique_instance_id(user.email.clone());
-    user.instance_id = unique_instance_id.clone();
-
-    // Add to user's API keys
-    user.api_key.push(api_key_struct.clone());
-    user_datastore.insert_mem(data.email.clone(), user.clone())?;
 
     info!(
         "🐳 Spawning BlazeDB container for user: {} (instance_id: {})",
@@ -259,11 +267,12 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
     })
 }
 
+#[allow(unused)]
 /// Verifies an API key and returns the associated user email if valid
 /// Returns None if the key is invalid, revoked, or not found
 pub async fn verify_api_key(api_key: &str) -> Result<Option<String>> {
     // Extract email from API key (format: blz_{base64_email}_{secret})
-    let email = match crate::server::crypto::extract_email_from_api_key(api_key) {
+    let email = match extract_email_from_api_key(api_key) {
         Some(e) => e,
         None => return Ok(None), // Invalid format
     };
@@ -290,10 +299,11 @@ pub async fn send_verification_code(email: &str) -> Result<bool> {
     let rate_limit_cache = get_rate_limit_cache();
     let now_timestamp = Utc::now().timestamp();
 
-    // Check rate limiting
+    // Check rate limiting using write lock
+    // This prevents race conditions where multiple threads could slip through
     {
-        let rate_read = rate_limit_cache.read().await;
-        if let Some(&last_request) = rate_read.get(email) {
+        let mut rate_write = rate_limit_cache.write().await;
+        if let Some(&last_request) = rate_write.get(email) {
             let elapsed = now_timestamp - last_request;
             if elapsed < OTP_COOLDOWN_SECONDS {
                 let remaining = OTP_COOLDOWN_SECONDS - elapsed;
@@ -307,6 +317,8 @@ pub async fn send_verification_code(email: &str) -> Result<bool> {
                 ));
             }
         }
+        // Update rate limit (before releasing lock)
+        rate_write.insert(email.to_string(), now_timestamp);
     }
 
     // Generate a random 6-digit OTP
@@ -438,9 +450,8 @@ pub async fn send_verification_code(email: &str) -> Result<bool> {
 
     let response: bool = match mailer.send(&email_message) {
         Ok(_) => {
-            // Update rate limit timestamp on successful send
-            let mut rate_write = rate_limit_cache.write().await;
-            rate_write.insert(email.to_string(), now_timestamp);
+            // Rate limit was already updated atomically at the beginning of the function
+            // This means even if email sending fails, the user will still be rate limited for the cooldown period to prevent abuse
             info!("OTP sent to {} (rate limit updated)", email);
             true
         }

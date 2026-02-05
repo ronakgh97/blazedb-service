@@ -1,8 +1,9 @@
 use pbkdf2::pbkdf2_hmac;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use zeroize::ZeroizeOnDrop;
 
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq, Hash, ZeroizeOnDrop)]
 pub struct APIKey {
     pub user_name: String,
     pub user_email: String,
