@@ -1,19 +1,22 @@
 services:
+  # Blaze Service (User Auth & Registration) - Port 3000
   blaze-service:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.service
     image: blaze-service:latest
     container_name: blaze_service
     env_file:
       - .env
     ports:
-      - "3000:3000"
+      - "3000:3000"  # Exposed via Cloudflare Tunnel, later use proper public IP when I get a VM, I'm broke :(
     volumes:
       - blaze_service_data:/home/blz_service
+      - /var/run/docker.sock:/var/run/docker.sock  # Allow spawning containers
     environment:
       - RUST_LOG=info
-      - HOME=/home/blaze-service
+      - HOME=/home/blz_service
+      - PORT=3000
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "test", "-f", "/app/blz_service" ]
@@ -21,12 +24,40 @@ services:
       timeout: 3s
       retries: 3
     networks:
-      - blaze-service_network
+      - blazedb_network
+
+  # Blaze Proxy (Routes to User Containers) - Port 8000
+  blaze-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.proxy
+    image: blaze-proxy:latest
+    container_name: blaze_proxy
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"  # Exposed via Cloudflare Tunnel
+    volumes:
+      - blaze_service_data:/home/blz_service  # Needs access to users.json
+    environment:
+      - RUST_LOG=info
+      - HOME=/home/blz_service
+      - PROXY_PORT=8000
+    restart: unless-stopped
+    depends_on:
+      - blaze-service
+    healthcheck:
+      test: [ "CMD", "test", "-f", "/app/blz-proxy" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - blazedb_network
 
 volumes:
   blaze_service_data:
     driver: local
 
 networks:
-  blaze-service_network:
+  blazedb_network:
     driver: bridge
