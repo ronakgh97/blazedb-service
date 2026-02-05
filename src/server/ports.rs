@@ -6,6 +6,7 @@
 /// - Proxy and container spawning use identical logic
 /// - No port conflicts within 10k container limit, I guess?, Mathematically possible but unlikely
 //TODO: Need to find a better way to port allocations to avoid collisions, maybe use a more robust hash function or maintain a mapping in storage
+#[inline]
 pub fn calculate_container_port(instance_id: &str) -> u16 {
     let hash: u16 = instance_id
         .chars()
