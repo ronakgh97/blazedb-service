@@ -1,7 +1,7 @@
 pub use crate::prelude::{
     Plans, User, UserRegisterRequest, UserRegisterResponse, VerifyEmailRequest, VerifyEmailResponse,
 };
-use crate::server::container::get_unique_instance_id;
+use crate::server::container::{get_unique_instance_id, spawn_blazedb_container};
 use crate::server::crypto::{APIKey, hash_otp, verify_otp as crypto_verify_otp};
 pub use crate::server::schema::{OtpRecord, UserStats, VerifyOtpRequest, VerifyOtpResponse};
 use crate::server::storage::DataStore;
@@ -228,11 +228,28 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
 
     // Assign instance ID
     let unique_instance_id = get_unique_instance_id(user.email.clone());
-    user.instance_id = unique_instance_id;
+    user.instance_id = unique_instance_id.clone();
 
     // Add to user's API keys
     user.api_key.push(api_key_struct.clone());
     user_datastore.insert_mem(data.email.clone(), user.clone())?;
+
+    info!(
+        "🐳 Spawning BlazeDB container for user: {} (instance_id: {})",
+        user.email, unique_instance_id
+    );
+
+    // TODO: Retry logic!!! or inst health or spin up endpoint in service
+    match spawn_blazedb_container(&unique_instance_id).await {
+        Ok(_) => {
+            info!("Container spawned successfully for {}", user.email);
+        }
+        Err(e) => {
+            error!("Failed to spawn container for {}: {}", user.email, e);
+            // Don't fail the verification, just log the error
+            // TODO: User can still use the service, container can be spawned later
+        }
+    }
 
     Ok(VerifyOtpResponse {
         is_verified: true,

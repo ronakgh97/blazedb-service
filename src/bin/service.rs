@@ -93,7 +93,7 @@ async fn health_check() -> impl IntoResponse {
     let uptime_hours = if let Some(start_time) = SERVER_START_TIME.get() {
         let now = chrono::Local::now();
         let duration = now.signed_duration_since(*start_time);
-        duration.num_milliseconds() as f64 / 3600000.0 // Convert milliseconds to hours
+        duration.num_hours() as f64
     } else {
         0.0
     };
