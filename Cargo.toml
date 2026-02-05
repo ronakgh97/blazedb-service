@@ -5,12 +5,12 @@ edition = "2024"
 autobins = false
 
 [[bin]]
-name = "blz_service"
+name = "blz-service"
 path = "src/bin/service.rs"
 
-#[[bin]]
-#name = "blz-proxy"
-#path = "src/bin/proxy.rs"
+[[bin]]
+name = "blz-proxy"
+path = "src/bin/proxy.rs"
 
 [lib]
 name = "blaze_service"
@@ -34,7 +34,6 @@ incremental = true
 tokio = { version = "1.49.0", features = ["full"] }
 memmap2 = "0.9.9"
 rayon = "1.11.0"
-reqwest = { version = "0.13.1", features = ["json"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 anyhow = "1.0.100"
@@ -49,4 +48,7 @@ dirs = "6.0.0"
 lettre = "0.11.19"
 base64 = "0.22"
 dotenv = "0.15.0"
+bollard = "0.20.1"  # Docker API client
+futures-util = "0.3"
+reqwest = { version = "0.13.1", features = ["json"] }
 #lettre_email = "0.9.4"
