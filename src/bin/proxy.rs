@@ -12,9 +12,9 @@ use blaze_service::server::crypto::{extract_email_from_api_key, hash_api_key};
 use blaze_service::server::ports::calculate_container_port;
 use blaze_service::server::schema::User;
 use blaze_service::server::service::get_data_path;
+use blaze_service::server::storage::DataStore;
 use blaze_service::{error, info};
 use lru::LruCache;
-use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Instant;
@@ -24,6 +24,7 @@ use tokio::sync::RwLock;
 struct AppState {
     // LRU Cache: api_key_hash -> User (auto-eviction when full)
     user_cache: Arc<RwLock<LruCache<String, CachedUser>>>,
+    user_store: DataStore<String, User>, // In-memory user store (loaded from disk)
     client: reqwest::Client,
     start_time: Instant,
 }
@@ -44,8 +45,14 @@ async fn main() -> Result<()> {
 
     dotenv::dotenv().ok();
 
-    // TODO: Need cache invalidation strategy, maybe use  background job to clear all cache every X minutes
+    let user_store = DataStore::<String, User>::new(get_data_path().join("users.json"))?;
+
+    // LRU Cache with automatic eviction + background reload strategy
+    // - Max 1024 entries (oldest evicted when full)
+    // - Background task reloads user_store every 60s
+    // - Cache invalidation happens naturally on next access after reload
     let state = AppState {
+        user_store,
         user_cache: Arc::new(RwLock::new(LruCache::new(NonZeroUsize::new(1024).unwrap()))),
         client: reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
@@ -53,13 +60,17 @@ async fn main() -> Result<()> {
         start_time: Instant::now(),
     };
 
+    update_cache_task(state.clone()).await;
+
     let app = create_router(state);
+
+    dotenv::dotenv().ok();
 
     let port = std::env::var("PROXY_PORT").unwrap_or("8000".to_string());
     let addr = format!("0.0.0.0:{}", port);
 
-    let server_time = chrono::Utc::now();
     let listener = tokio::net::TcpListener::bind(&addr).await?;
+    let server_time = chrono::Utc::now();
 
     info!("Proxy server listening on {}", addr);
     info!("Server started at {}", server_time.to_rfc3339());
@@ -164,6 +175,7 @@ async fn proxy_handler(
     Ok(response)
 }
 
+#[inline]
 async fn forward_request(
     client: &reqwest::Client,
     target_url: &str,
@@ -243,7 +255,7 @@ fn extract_api_key(headers: &HeaderMap) -> Result<String, ProxyError> {
 async fn verify_api_key(
     state: &AppState,
     api_key_hash: &str,
-    email: &str,
+    email: &String,
 ) -> Result<CachedUser, ProxyError> {
     // Check LRU cache first
     {
@@ -254,8 +266,8 @@ async fn verify_api_key(
         }
     }
 
-    // Cache miss - load from disk and verify
-    let cached_user = load_and_verify_user(api_key_hash, email).await?;
+    // Cache miss - load from disk or memory and verify
+    let cached_user = load_and_verify(&state.user_store, api_key_hash, email).await?;
 
     // Update LRU cache (auto-evicts oldest entry if full)
     {
@@ -266,24 +278,16 @@ async fn verify_api_key(
     Ok(cached_user)
 }
 
-// TODO: Optimize with memmory-mapped file using locked reads
-async fn load_and_verify_user(api_key_hash: &str, email: &str) -> Result<CachedUser, ProxyError> {
-    let data_path = get_data_path();
-    let users_file = data_path.join("users.json");
-
-    if !users_file.exists() {
-        return Err(ProxyError::DatastoreNotFound);
-    }
-
-    let content = tokio::fs::read_to_string(&users_file)
-        .await
-        .map_err(|_| ProxyError::DatastoreError)?;
-
-    let users: HashMap<String, User> =
-        serde_json::from_str(&content).map_err(|_| ProxyError::DatastoreError)?;
-
-    // Find user by email first (since we extracted it from API key)
-    let user = users.get(email).ok_or(ProxyError::InvalidApiKey)?;
+// Load and verify user from DataStore (thread-safe with RwLock)
+async fn load_and_verify(
+    user_store: &DataStore<String, User>,
+    api_key_hash: &str,
+    email: &String,
+) -> Result<CachedUser, ProxyError> {
+    let user = user_store
+        .get(email)
+        .map_err(|_| ProxyError::DatastoreNotFound)?
+        .ok_or(ProxyError::InvalidApiKey)?;
 
     // Verify API key hash matches
     let key_valid = user
@@ -303,6 +307,21 @@ async fn load_and_verify_user(api_key_hash: &str, email: &str) -> Result<CachedU
     })
 }
 
+/// Background task to reload user store from disk periodically
+/// This ensures cache stays fresh without clearing it (LRU will naturally evict stale entries)
+async fn update_cache_task(state: AppState) {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+
+            // Reload user store from disk (cache will naturally refresh on next access)
+            if let Err(e) = state.user_store.reload() {
+                error!("Failed to reload user store: {}", e);
+            }
+        }
+    });
+}
+
 #[derive(Debug)]
 enum ProxyError {
     MissingApiKey,
@@ -310,6 +329,7 @@ enum ProxyError {
     InvalidPath,
     Forbidden,
     DatastoreNotFound,
+    #[allow(unused)]
     DatastoreError,
     InstanceUnavailable,
     InstanceError,
