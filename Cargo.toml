@@ -51,4 +51,8 @@ dotenv = "0.15.0"
 bollard = "0.20.1"  # Docker API client
 futures-util = "0.3"
 reqwest = { version = "0.13.1", features = ["json"] }
+zeroize = { version = "1.8.2", features = ["derive"] }
+lru = "0.16.3"
+# lazy_static = "1.5.0"
+# sysinfo = "0.38.0"
 #lettre_email = "0.9.4"
