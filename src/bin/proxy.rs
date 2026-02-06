@@ -138,7 +138,7 @@ async fn proxy_handler(
 
     info!(" ↳ User: {} ({})", user.username, user.email);
 
-    // Security check: Verify instance_id matches user's instance_id
+    // Verify instance_id matches user's instance_id
     if user.instance_id != instance_id {
         error!(
             "  ✗ Instance ID mismatch! User: {}, Requested: {}",
@@ -311,8 +311,9 @@ async fn load_and_verify(
 /// This ensures cache stays fresh without clearing it (LRU will naturally evict stale entries)
 async fn update_cache_task(state: AppState) {
     tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+            interval.tick().await;
 
             // Reload user store from disk (cache will naturally refresh on next access)
             if let Err(e) = state.user_store.reload() {

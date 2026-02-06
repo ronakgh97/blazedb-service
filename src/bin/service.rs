@@ -1,16 +1,21 @@
 use anyhow::Result;
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use blaze_service::prelude::*;
-use blaze_service::server::schema::{UserData, UserStats};
+use blaze_service::server::crypto::extract_email_from_api_key;
+use blaze_service::server::schema::{
+    InstanceStatusResponse, InstanceStatusResquest, UserData, UserStats,
+};
 use blaze_service::server::service::{
-    get_all_free_users, get_all_pro_users, get_all_starter_users, get_unverified_users,
-    is_user_exists, is_user_verified, periodic_save_users, save_user, verify_user,
+    get_all_free_users, get_all_pro_users, get_all_starter_users, get_instance_stats,
+    get_unverified_users, is_user_exists, is_user_verified, periodic_save_users, save_user,
+    verify_user,
 };
 use blaze_service::{error, info, warn};
 use std::sync::OnceLock;
+use std::time::Duration;
 
 static SERVER_START_TIME: OnceLock<chrono::DateTime<chrono::Local>> = OnceLock::new();
 
@@ -50,8 +55,9 @@ async fn create_router() -> Router {
         .route("/v1/blz/auth/register", post(auth_register))
         .route("/v1/blz/auth/verify-email", post(auth_verify_email))
         .route("/v1/blz/auth/verify-code", post(auth_verify_code))
-        .route("/billing/plans", get(billing_plans))
-        .route("/v1/blz/users/stats", get(get_user_stats))
+        .route("/v1/billing/plans", get(billing_plans))
+        .route("/v1/blz/users/stats", get(get_user_stats)) // Admin endpoint to get user stats SAFELY (NOTHING EXPOSED HERE)
+        .route("/v1/blz/instance/status", post(instance_status))
     // .route("/billing/checkout", post(billing_checkout))
     // .route("/billing/webhook", post(stripe_webhook))
     // .route("/account/status", get(account_status))
@@ -60,7 +66,7 @@ async fn create_router() -> Router {
 // Start background cleanup task for OTPs
 pub async fn start_cleanup_task() {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
         loop {
             interval.tick().await;
             match cleanup_expired_otps().await {
@@ -78,7 +84,7 @@ pub async fn start_cleanup_task() {
 // Start background task to periodically save users to disk
 pub async fn start_user_save_task() {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+        let mut interval = tokio::time::interval(Duration::from_secs(10));
         loop {
             interval.tick().await;
             match periodic_save_users().await {
@@ -350,6 +356,137 @@ async fn get_user_stats() -> impl IntoResponse {
     (StatusCode::OK, Json(userdata))
 }
 
+async fn instance_status(
+    headers: HeaderMap,
+    Json(payload): Json<InstanceStatusResquest>,
+) -> impl IntoResponse {
+    if is_empty_field(&payload.inst_id) {
+        warn!("Instance status check failed: Empty instance ID");
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(InstanceStatusResponse {
+                health: "unknown".to_string(),
+                running_from: "unknown".to_string(),
+                last_error_at: "unknown".to_string(),
+                message: "Instance ID cannot be empty".to_string(),
+            }),
+        );
+    }
+
+    let api_key = match extract_apy_key(&headers) {
+        Some(api_key) => api_key,
+        None => {
+            warn!("Instance status check failed: Invalid or missing API key");
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(InstanceStatusResponse {
+                    health: "unknown".to_string(),
+                    running_from: "unknown".to_string(),
+                    last_error_at: "unknown".to_string(),
+                    message: "Invalid or missing API key".to_string(),
+                }),
+            );
+        }
+    };
+
+    let user_email: String = match extract_email_from_api_key(api_key) {
+        Some(email) => email,
+        None => {
+            warn!("Instance status check failed: Unable to extract email from API key");
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(InstanceStatusResponse {
+                    health: "unknown".to_string(),
+                    running_from: "unknown".to_string(),
+                    last_error_at: "unknown".to_string(),
+                    message: "Invalid API key format".to_string(),
+                }),
+            );
+        }
+    };
+
+    // This is redundant, but why not? right
+    match is_user_exists(&user_email).await {
+        Ok(exists) => {
+            if !exists {
+                warn!(
+                    "Instance status check failed: User not found for email: {}",
+                    user_email
+                );
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(InstanceStatusResponse {
+                        health: "unknown".to_string(),
+                        running_from: "unknown".to_string(),
+                        last_error_at: "unknown".to_string(),
+                        message: "User not found".to_string(),
+                    }),
+                );
+            }
+        }
+        Err(e) => {
+            error!(
+                "Some error occurred while checking user existence for email: {}, Error: {:?}",
+                user_email, e
+            );
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(InstanceStatusResponse {
+                    health: "unknown".to_string(),
+                    running_from: "unknown".to_string(),
+                    last_error_at: "unknown".to_string(),
+                    message: "Internal server error, Sorry!".to_string(),
+                }),
+            );
+        }
+    }
+
+    match get_instance_stats(&user_email).await {
+        Ok(stats) => {
+            info!(
+                "Instance status fetched successfully for user: {}",
+                user_email
+            );
+            (StatusCode::OK, Json(stats))
+        }
+        Err(e) => {
+            error!(
+                "Failed to get instance stats for email: {}, Error: {:?}",
+                user_email, e
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(InstanceStatusResponse {
+                    health: "unknown".to_string(),
+                    running_from: "unknown".to_string(),
+                    last_error_at: "unknown".to_string(),
+                    message: "Something went wrong, Error: ".to_string() + &e.to_string(),
+                }),
+            )
+        }
+    }
+}
+
 fn is_empty_field(field: &str) -> bool {
     if field.trim().is_empty() { true } else { false }
+}
+
+/// Extracts the API key from the header and validates format
+/// Return None if anything is fishy
+fn extract_apy_key(headers: &HeaderMap) -> Option<&str> {
+    let auth_header = headers.get("Authorization");
+
+    let auth_str = auth_header?.to_str().ok()?;
+
+    let api_key: &str = if auth_str.starts_with("Bearer ") {
+        auth_str.split_whitespace().nth(1)?
+    } else {
+        auth_str
+    };
+
+    if !api_key.starts_with("blz_") {
+        return None;
+    }
+
+    Some(api_key)
 }
