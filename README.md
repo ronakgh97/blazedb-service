@@ -64,13 +64,14 @@ or RocksDB later 😔
 
 ## 📋 Subscription Plans
 
-| Plan                  | Price/Month | Databases | Vectors/DB | Features                                                                                                              |
-|-----------------------|-------------|-----------|------------|-----------------------------------------------------------------------------------------------------------------------|
-| **Free**              | $0          | 5         | 5K         | Dedicated User Container (CPU: 3) + Any Dimension                                                                     |
-| **Starter**           | $9          | 10        | 100K       | Dedicated User Container (CPU: 6) + Any Dimension + Priority Support + Backups                                        |
-| **Pro** (Coming Soon) | $19         | 20        | 500K       | Dedicated User VM Instance + Any Dimension + Example Amazon Demo Dataset + Priority Support + Backups + Embedding API |
+| Plan                  | Price/Month | Databases | Vectors/DB | Features                                                                                                               |
+|-----------------------|-------------|-----------|------------|------------------------------------------------------------------------------------------------------------------------|
+| **Free**              | $0          | 5         | 5K         | Dedicated User Container (CPU: 0.5 core, RAM: 512MB) + Any Dimension                                                   |
+| **Starter**           | $9          | 10        | 100K       | Dedicated User Container (CPU: 3 core, RAM: 2GB) + Any Dimension + Priority Support + Backups                          |
+| **Pro** (Coming Soon) | $29         | 20        | 500K       | Dedicated User AWS Instance + Any Dimension + Example Amazon Demo Dataset + Priority Support + Backups + Embedding API |
 
 - All Plans included Demo Dataset (Amazon product 2023 embeddings)
+- Support any dimension (Tested upto 1024D), but performance may degrade with higher dimensions
 
 ## 🔐 Security
 
