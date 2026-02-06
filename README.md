@@ -2,10 +2,10 @@
 
 > **SaaS Platform for [BlazeDB](https://github.com/ronakgh97/blaze-db)** - Managed Vector Database as a Service
 
-Blaze Service is the Backend layer on top of BlazeDB as a SaaS platform, providing user
+Blaze Service is the Backend/Proxy layer on top of BlazeDB as a SaaS platform, providing user
 authentication, billing management, and instance provisioning for the high-performance vector database.
 
-[![Rust](https://img.shields.io/badge/rust-1.92%2B-orange.svg)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.92%2B-orange.svg)](https://www.rust-lang.org/) [![Docker](https://img.shields.io/badge/docker-20.10%2B-blue.svg)](https://www.docker.com/)
 
 ## Overview
 
@@ -64,11 +64,13 @@ or RocksDB later 😔
 
 ## 📋 Subscription Plans
 
-| Plan                   | Price/Month | Databases | Vectors/DB | Features                                                                                         |
-|------------------------|-------------|-----------|------------|--------------------------------------------------------------------------------------------------|
-| **Free**               | $0          | 5         | 5K         | Dedicated User Space (CPU: 3) + Any Dimensions + Example Amazon Demo Dataset                     |
-| **Starter**            | $12         | 10        | 100K       | Dedicated User Space (CPU: 6) + Any Dimensions + Example Amazon Demo Dataset                     |
-| **Pro** (Not sure yet) | $19         | 20        | 500K       | Dedicated User Space and Instance + Any Dimensions + Example Amazon Demo Dataset + Embedding API |
+| Plan                  | Price/Month | Databases | Vectors/DB | Features                                                                                                              |
+|-----------------------|-------------|-----------|------------|-----------------------------------------------------------------------------------------------------------------------|
+| **Free**              | $0          | 5         | 5K         | Dedicated User Container (CPU: 3) + Any Dimension                                                                     |
+| **Starter**           | $9          | 10        | 100K       | Dedicated User Container (CPU: 6) + Any Dimension + Priority Support + Backups                                        |
+| **Pro** (Coming Soon) | $19         | 20        | 500K       | Dedicated User VM Instance + Any Dimension + Example Amazon Demo Dataset + Priority Support + Backups + Embedding API |
+
+- All Plans included Demo Dataset (Amazon product 2023 embeddings)
 
 ## 🔐 Security
 
