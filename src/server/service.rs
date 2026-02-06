@@ -1,10 +1,13 @@
 pub use crate::prelude::{
     Plans, User, UserRegisterRequest, UserRegisterResponse, VerifyEmailRequest, VerifyEmailResponse,
 };
-use crate::server::container::{get_unique_instance_id, spawn_blazedb_container};
+use crate::server::container::{
+    get_container_status, get_unique_instance_id, spawn_blazedb_container,
+};
 use crate::server::crypto::{
     APIKey, extract_email_from_api_key, hash_otp, verify_otp as crypto_verify_otp,
 };
+use crate::server::schema::InstanceStatusResponse;
 pub use crate::server::schema::{OtpRecord, UserStats, VerifyOtpRequest, VerifyOtpResponse};
 use crate::server::storage::DataStore;
 use crate::{error, info};
@@ -162,6 +165,7 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
     let otp_record = match otp_record {
         Some(record) => record,
         None => {
+            // Dont remove the OTP yet, user may retry within valid time
             return Ok(VerifyOtpResponse {
                 is_verified: false,
                 message: "No verification code found for this email".to_string(),
@@ -520,6 +524,30 @@ pub async fn periodic_save_users() -> Result<()> {
     let user_store = get_user_store().await;
     user_store.save_to_disk()?;
     Ok(())
+}
+
+pub async fn get_instance_stats(user_email: &String) -> Result<InstanceStatusResponse> {
+    let user_store = get_user_store().await;
+
+    let instance_id = user_store
+        .get(&user_email)?
+        .ok_or_else(|| anyhow::anyhow!("User not found"))?
+        .instance_id
+        .clone();
+
+    let container_name = format!("blazedb-{}", instance_id);
+
+    let (is_healthy, running_from, last_error_at, error_state) =
+        get_container_status(&container_name).await?;
+
+    Ok(InstanceStatusResponse {
+        health: is_healthy
+            .then(|| "healthy".to_string())
+            .unwrap_or_else(|| "unhealthy".to_string()),
+        running_from,
+        last_error_at,
+        message: error_state,
+    })
 }
 
 /// Retrieves all users from the datastore

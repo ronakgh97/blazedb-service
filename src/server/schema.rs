@@ -44,7 +44,6 @@ pub struct VerifyOtpResponse {
     pub api_key: Option<String>, // Return plain API key ONLY once after verification
     pub instance_id: Option<String>,
 }
-
 /// Structure representing an OTP record
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct OtpRecord {
@@ -52,6 +51,19 @@ pub struct OtpRecord {
     pub otp_hash: String,
     pub created_at: String,
     pub expires_at: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct InstanceStatusResquest {
+    pub inst_id: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct InstanceStatusResponse {
+    pub health: String, // "healthy", "unhealthy"
+    pub running_from: String,
+    pub last_error_at: String,
+    pub message: String,
 }
 
 /// Structure representing a user
