@@ -4,8 +4,8 @@ use anyhow::Result;
 use bollard::Docker;
 use bollard::config::VolumeCreateRequest;
 use bollard::models::{
-    ContainerCreateBody, HostConfig, Mount, MountTypeEnum, PortBinding, RestartPolicy,
-    RestartPolicyNameEnum,
+    ContainerCreateBody, HealthStatusEnum, HostConfig, Mount, MountTypeEnum, PortBinding,
+    RestartPolicy, RestartPolicyNameEnum,
 };
 #[allow(unused)]
 use bollard::query_parameters::{
@@ -272,6 +272,44 @@ async fn create_volume_if_not_exists(docker: &Docker, volume_name: &str) -> Resu
     }
 
     Ok(())
+}
+
+#[allow(unused)]
+/// Checks the health status of a container
+pub async fn check_container_health(container_name: &str) -> Result<bool> {
+    let docker = connect_docker()?;
+    let container_info = docker.inspect_container(container_name, None).await?;
+
+    if let Some(state) = container_info.state {
+        if let Some(health) = state.health {
+            return Ok(health.status == Some(HealthStatusEnum::HEALTHY));
+        }
+    }
+
+    Ok(false)
+}
+
+// This function returns a tuple of (is_healthy, started_at, last_error_at, error_state) for the container
+pub async fn get_container_status(container_name: &str) -> Result<(bool, String, String, String)> {
+    let docker = connect_docker()?;
+
+    let container_info = docker.inspect_container(container_name, None).await?;
+
+    let result = (false, String::new(), String::new(), String::new());
+
+    if let Some(state) = container_info.state {
+        let is_healthy = if let Some(health) = state.health {
+            health.status == Some(HealthStatusEnum::HEALTHY)
+        } else {
+            false
+        };
+        let started_at = state.started_at.unwrap_or(String::new());
+        let last_error_at = state.finished_at.unwrap_or(String::new());
+        let error_state = state.error.unwrap_or(String::from(""));
+        return Ok((is_healthy, started_at, last_error_at, error_state));
+    }
+
+    Ok(result)
 }
 
 /// Pulls the BlazeDB image from Docker Hub
