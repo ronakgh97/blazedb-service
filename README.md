@@ -67,7 +67,7 @@ or RocksDB later 😔
 | Plan                  | Price/Month | Databases | Vectors/DB | Features                                                                                                               |
 |-----------------------|-------------|-----------|------------|------------------------------------------------------------------------------------------------------------------------|
 | **Free**              | $0          | 5         | 5K         | Dedicated User Container (CPU: 0.5 core, RAM: 512MB) + Any Dimension                                                   |
-| **Starter**           | $9          | 10        | 100K       | Dedicated User Container (CPU: 3 core, RAM: 2GB) + Any Dimension + Priority Support + Backups                          |
+| **Starter**           | $9          | 10        | 100K       | Dedicated User Container (CPU: 3 core, RAM: 2GB) + Any Dimension + Priority Support + 7 days Backups                   |
 | **Pro** (Coming Soon) | $29         | 20        | 500K       | Dedicated User AWS Instance + Any Dimension + Example Amazon Demo Dataset + Priority Support + Backups + Embedding API |
 
 - All Plans included Demo Dataset (Amazon product 2023 embeddings)
