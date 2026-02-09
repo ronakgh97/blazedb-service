@@ -53,7 +53,11 @@ pub fn get_unique_instance_id(email: String) -> String {
 
 // TODO: Need to implement retry logic for Docker operations, maybe not but on service module
 /// Spawns a new BlazeDB container for a user
-pub async fn spawn_blazedb_container(instance_id: &str) -> Result<()> {
+pub async fn spawn_blazedb_container(
+    instance_id: &str,
+    cpu_count: f64,
+    memory_allocate: i64,
+) -> Result<()> {
     let docker = connect_docker()?;
 
     let container_name = format!("blazedb-{}", instance_id);
@@ -141,6 +145,8 @@ pub async fn spawn_blazedb_container(instance_id: &str) -> Result<()> {
                 name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
                 ..Default::default()
             }),
+            cpu_quota: Some((1_000_000_000.0 * cpu_count) as i64),
+            memory: Some(memory_allocate),
             ..Default::default()
         }),
         ..Default::default()
@@ -310,6 +316,97 @@ pub async fn get_container_status(container_name: &str) -> Result<(bool, String,
     }
 
     Ok(result)
+}
+
+/// Restarts a container by ID (useful for applying updates without data loss)
+#[allow(unused)]
+pub async fn restart_container(instance_id: &str) -> Result<()> {
+    let docker = connect_docker()?;
+    let container_name = format!("blazedb-{}", instance_id);
+
+    if !container_exists(&docker, &container_name).await? {
+        return Ok(()); // Container doesn't exist, nothing to do
+    }
+
+    docker.restart_container(&container_name, None).await?;
+
+    info!("Restarted container: {}", container_name);
+
+    Ok(())
+}
+
+/// Stops a container by ID without removing it (data persists, can be restarted later)
+#[allow(unused)]
+pub async fn stop_container(instance_id: &str) -> Result<()> {
+    let docker = connect_docker()?;
+    let container_name = format!("blazedb-{}", instance_id);
+
+    if !container_exists(&docker, &container_name).await? {
+        return Ok(()); // Container doesn't exist, nothing to do
+    }
+
+    docker.stop_container(&container_name, None).await?;
+
+    info!("Stopped container: {}", container_name);
+
+    Ok(())
+}
+
+/// Removes a container and its associated volumes (data loss, use with caution)
+#[allow(unused)]
+pub async fn remove_container_with_volumes(instance_id: &str) -> Result<()> {
+    let docker = connect_docker()?;
+    let container_name = format!("blazedb-{}", instance_id);
+
+    if !container_exists(&docker, &container_name).await? {
+        return Ok(()); // Container doesn't exist, nothing to do
+    }
+
+    // Remove container
+    let options = RemoveContainerOptions {
+        force: true,
+        ..Default::default()
+    };
+
+    docker
+        .remove_container(&container_name, Some(options))
+        .await?;
+
+    // Remove associated volumes
+    let config_volume = format!("blazedb_config_{}", instance_id);
+    let sources_volume = format!("blazedb_sources_{}", instance_id);
+
+    let volume_options = RemoveVolumeOptions { force: true };
+
+    docker
+        .remove_volume(&config_volume, Some(volume_options.clone()))
+        .await?;
+    docker
+        .remove_volume(&sources_volume, Some(volume_options.clone()))
+        .await?;
+
+    info!(
+        "Removed container and volumes for instance: {}",
+        instance_id
+    );
+
+    Ok(())
+}
+
+/// Updates the container image by pulling the latest image and restarting the container to apply changes (data persists)
+#[allow(unused)]
+pub async fn update_container_image(instance_id: &str) -> Result<()> {
+    let docker = connect_docker()?;
+
+    // Pull latest image
+    pull_blazedb_image(&docker).await?;
+
+    // Restart container to apply new image
+    restart_container(instance_id).await?;
+
+    info!("Updated container image for instance: {}", instance_id);
+
+    Ok(())
 }
 
 /// Pulls the BlazeDB image from Docker Hub

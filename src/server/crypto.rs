@@ -1,4 +1,5 @@
 use pbkdf2::pbkdf2_hmac;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::ZeroizeOnDrop;
@@ -62,7 +63,6 @@ impl APIKey {
 
 /// Generates a cryptographic salt of the specified length in bytes.
 pub async fn generate_salt(len: usize) -> Vec<u8> {
-    use rand::RngCore;
     let mut salt = vec![0u8; len];
     rand::rng().fill_bytes(&mut salt);
     salt

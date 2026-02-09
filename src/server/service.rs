@@ -114,6 +114,13 @@ pub async fn save_user(user_data: &UserRegisterRequest) -> Result<UserRegisterRe
     Ok(response)
 }
 
+/// Periodically saves user data from memory to disk
+pub async fn periodic_save_users() -> Result<()> {
+    let user_store = get_user_store().await;
+    user_store.save_to_disk()?;
+    Ok(())
+}
+
 /// Checks if a user with the given email exists in the datastore.
 pub async fn is_user_exists(email: &String) -> Result<bool> {
     let datastore = get_user_store().await;
@@ -246,22 +253,25 @@ pub async fn verify_otp(data: &VerifyOtpRequest) -> Result<VerifyOtpResponse> {
         cache_write.remove(&data.email);
     }
 
-    info!(
-        "🐳 Spawning BlazeDB container for user: {} (instance_id: {})",
-        user.email, unique_instance_id
-    );
+    // Spawn container asynchronously, we don't want to block the response while waiting for container to be ready
+    tokio::spawn(async move {
+        info!(
+            "🐳 Spawning BlazeDB container for user: {} (instance_id: {})",
+            user.email, unique_instance_id
+        );
 
-    // TODO: Retry logic!!! or inst health or spin up endpoint in service
-    match spawn_blazedb_container(&unique_instance_id).await {
-        Ok(_) => {
-            info!("Container spawned successfully for {}", user.email);
+        // TODO: Retry logic!!! or inst health or spin up endpoint in service
+        match spawn_blazedb_container(&unique_instance_id, 0.5, 512).await {
+            Ok(_) => {
+                info!("Container spawned successfully for {}", user.email);
+            }
+            Err(e) => {
+                error!("Failed to spawn container for {}: {}", user.email, e);
+                // Don't fail the verification, just log the error
+                // TODO: User can still use the service, container can be spawned later
+            }
         }
-        Err(e) => {
-            error!("Failed to spawn container for {}: {}", user.email, e);
-            // Don't fail the verification, just log the error
-            // TODO: User can still use the service, container can be spawned later
-        }
-    }
+    });
 
     Ok(VerifyOtpResponse {
         is_verified: true,
@@ -517,13 +527,6 @@ pub async fn cleanup_expired_otps() -> Result<usize> {
     }
 
     Ok(removed_count)
-}
-
-/// Periodically saves user data from memory to disk
-pub async fn periodic_save_users() -> Result<()> {
-    let user_store = get_user_store().await;
-    user_store.save_to_disk()?;
-    Ok(())
 }
 
 pub async fn get_instance_stats(user_email: &String) -> Result<InstanceStatusResponse> {
