@@ -109,6 +109,12 @@ async fn proxy_handler(
 ) -> Result<Response, ProxyError> {
     let path = uri.path();
 
+    // Block restricted endpoints
+    if path.contains("/v1/blazedb/embed") || path.contains("/v1/blazedb/query") {
+        error!("Blocked request to restricted endpoint: {}", path);
+        return Err(ProxyError::BlockedEndpoint);
+    }
+
     // Extract instance_id from URL
     let instance_id = path
         .trim_end_matches('/')
@@ -329,6 +335,7 @@ enum ProxyError {
     InvalidApiKey,
     InvalidPath,
     Forbidden,
+    BlockedEndpoint,
     DatastoreNotFound,
     #[allow(unused)]
     DatastoreError,
@@ -346,6 +353,10 @@ impl IntoResponse for ProxyError {
                 "Missing Authorization header with API key",
             ),
             ProxyError::InvalidApiKey => (StatusCode::UNAUTHORIZED, "Invalid API key"),
+            ProxyError::BlockedEndpoint => (
+                StatusCode::UNAUTHORIZED,
+                "This endpoint is not available",
+            ),
             ProxyError::InvalidPath => (
                 StatusCode::BAD_REQUEST,
                 "Invalid request path - missing instance_id",

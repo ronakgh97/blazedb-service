@@ -32,7 +32,7 @@ incremental = true
 
 [dependencies]
 tokio = { version = "1.49.0", features = ["full"] }
-memmap2 = "0.9.9"
+memmap2 = "0.9.10"
 rayon = "1.11.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
@@ -46,11 +46,11 @@ pbkdf2 = "0.12.2"
 hex = "0.4.3"
 dirs = "6.0.0"
 lettre = "0.11.19"
-base64 = "0.22"
+base64 = "0.22.1"
 dotenv = "0.15.0"
 bollard = "0.20.1"  # Docker API client
 futures-util = "0.3.31"
-reqwest = { version = "0.13.1", features = ["json"] }
+reqwest = { version = "0.13.2", features = ["json"] }
 zeroize = { version = "1.8.2", features = ["derive"] }
 lru = "0.16.3"
 # lazy_static = "1.5.0"
